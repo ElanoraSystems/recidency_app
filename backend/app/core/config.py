@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,6 +9,19 @@ class Settings(BaseSettings):
 
     environment: str = "local"
     database_url: str = "postgresql+asyncpg://hadlaan:hadlaan_dev_password@localhost:5432/hadlaan"
+
+    @field_validator("database_url")
+    @classmethod
+    def _require_asyncpg_driver(cls, v: str) -> str:
+        # Managed Postgres providers (Render included) hand out a plain
+        # postgresql:// (or the legacy postgres://) connection string — the
+        # async engine needs the +asyncpg dialect prefix or it picks a sync
+        # driver that isn't installed and fails at startup.
+        if v.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + v[len("postgresql://"):]
+        if v.startswith("postgres://"):
+            return "postgresql+asyncpg://" + v[len("postgres://"):]
+        return v
 
     jwt_secret: str = "dev-secret"
     jwt_algorithm: str = "HS256"
