@@ -1,0 +1,396 @@
+@import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap");
+
+:root {
+  --bg: #eef1ea;
+  --surface: #ffffff;
+  --surface-sunken: #e5e8de;
+  --surface-hover: #f5f6f0;
+  --border: #d7dbcc;
+  --border-strong: #bcc2ae;
+  --ink-900: #161a15;
+  --ink-700: #333c31;
+  --ink-500: #5c6558;
+  --ink-400: #838c7c;
+  --ink-300: #a7ae9c;
+  --brass-700: #7c5e24;
+  --brass-600: #93752f;
+  --brass-500: #ab8a42;
+  --brass-400: #c7a862;
+  --brass-200: #e7d9b3;
+  --brass-100: #f3ecd9;
+  --rail-bg: #161d18;
+  --rail-bg-2: #1d2620;
+  --rail-text: #c3cabb;
+  --rail-text-dim: #7d8878;
+  --rail-text-active: #f5f4ee;
+  --rail-border: #2a332b;
+  --rail-accent: #c7a862;
+  --status-good: #0ca30c;
+  --status-good-bg: #e2f4e0;
+  --status-warning: #c98a12;
+  --status-warning-bg: #fbead0;
+  --status-serious: #c05a35;
+  --status-serious-bg: #f7e1d4;
+  --status-critical: #c53131;
+  --status-critical-bg: #f8dcda;
+  --status-info: #2a5f9e;
+  --status-info-bg: #dfe9f4;
+  --status-neutral-bg: #e7e6dd;
+  --cat-1: #2a78d6;
+  --cat-2: #eb6834;
+  --cat-3: #1baf7a;
+  --cat-4: #eda100;
+  --cat-5: #e87ba4;
+  --cat-6: #008300;
+  --cat-7: #4a3aa7;
+  --cat-8: #e34948;
+  --shadow-sm: 0 1px 2px rgba(22, 26, 21, 0.06);
+  --shadow-md: 0 4px 16px rgba(22, 26, 21, 0.08);
+  --shadow-lg: 0 12px 40px rgba(22, 26, 21, 0.16);
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-body: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12150f;
+    --surface: #191f18;
+    --surface-sunken: #1f261d;
+    --surface-hover: #232b20;
+    --border: #2c3428;
+    --border-strong: #3d4737;
+    --ink-900: #f1efe4;
+    --ink-700: #d3d3c4;
+    --ink-500: #a8ae9c;
+    --ink-400: #7d8973;
+    --ink-300: #586052;
+    --brass-700: #e9d9ab;
+    --brass-600: #ddc588;
+    --brass-500: #cdac66;
+    --brass-400: #b8944c;
+    --brass-200: #4a3f24;
+    --brass-100: #33291a;
+    --rail-bg: #0d110c;
+    --rail-bg-2: #141a11;
+    --rail-text: #b7bfab;
+    --rail-text-dim: #69725f;
+    --rail-text-active: #f5f4ee;
+    --rail-border: #232b1f;
+    --rail-accent: #d9b972;
+    --status-good: #3fbf3f;
+    --status-good-bg: #173322;
+    --status-warning: #e8ab3d;
+    --status-warning-bg: #3a2c12;
+    --status-serious: #e8905f;
+    --status-serious-bg: #3a2416;
+    --status-critical: #e66767;
+    --status-critical-bg: #3a1a1a;
+    --status-info: #5c9bde;
+    --status-info-bg: #132436;
+    --status-neutral-bg: #242a20;
+    --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500;
+    --cat-5: #d55181; --cat-6: #39b039; --cat-7: #9085e9; --cat-8: #e66767;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12150f;
+  --surface: #191f18;
+  --surface-sunken: #1f261d;
+  --surface-hover: #232b20;
+  --border: #2c3428;
+  --border-strong: #3d4737;
+  --ink-900: #f1efe4;
+  --ink-700: #d3d3c4;
+  --ink-500: #a8ae9c;
+  --ink-400: #7d8973;
+  --ink-300: #586052;
+  --brass-700: #e9d9ab;
+  --brass-600: #ddc588;
+  --brass-500: #cdac66;
+  --brass-400: #b8944c;
+  --brass-200: #4a3f24;
+  --brass-100: #33291a;
+  --rail-bg: #0d110c;
+  --rail-bg-2: #141a11;
+  --rail-text: #b7bfab;
+  --rail-text-dim: #69725f;
+  --rail-text-active: #f5f4ee;
+  --rail-border: #232b1f;
+  --rail-accent: #d9b972;
+  --status-good: #3fbf3f;
+  --status-good-bg: #173322;
+  --status-warning: #e8ab3d;
+  --status-warning-bg: #3a2c12;
+  --status-serious: #e8905f;
+  --status-serious-bg: #3a2416;
+  --status-critical: #e66767;
+  --status-critical-bg: #3a1a1a;
+  --status-info: #5c9bde;
+  --status-info-bg: #132436;
+  --status-neutral-bg: #242a20;
+  --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500;
+  --cat-5: #d55181; --cat-6: #39b039; --cat-7: #9085e9; --cat-8: #e66767;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink-900);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Browsers never inherit font-family into form controls by default — every
+   input/select/textarea/button on the site was silently falling back to the
+   OS UI font instead of Manrope, which is why type looked inconsistent
+   screen to screen (pages with more forms looked more "off"). */
+button, input, select, textarea, optgroup {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ===================== Login: cinematic entrance & ambient motion ===================== */
+
+@keyframes login-fade-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes login-fade-scale {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes login-drift-a {
+  0%, 100% { transform: translate3d(-4%, -6%, 0) scale(1); }
+  50% { transform: translate3d(6%, 4%, 0) scale(1.12); }
+}
+@keyframes login-drift-b {
+  0%, 100% { transform: translate3d(5%, 8%, 0) scale(1.05); }
+  50% { transform: translate3d(-6%, -4%, 0) scale(0.95); }
+}
+@keyframes login-drift-c {
+  0%, 100% { transform: translate3d(0%, 0%, 0) scale(1); }
+  50% { transform: translate3d(-8%, 6%, 0) scale(1.08); }
+}
+
+@keyframes login-float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes login-shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+
+@keyframes login-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.login-anim {
+  opacity: 0;
+  animation: login-fade-up 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.login-anim-scale {
+  opacity: 0;
+  animation: login-fade-scale 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.login-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(60px);
+  will-change: transform;
+  pointer-events: none;
+}
+
+.login-float {
+  animation: login-float 6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.login-shake {
+  animation: login-shake 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.login-input {
+  transition: border-color 300ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.login-input:focus {
+  outline: none;
+  border-color: var(--brass-500);
+  box-shadow: 0 0 0 4px var(--brass-100);
+}
+
+.login-cta {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(110deg, var(--brass-600), var(--brass-500), var(--brass-700), var(--brass-500));
+  background-size: 300% 100%;
+  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1), background-position 900ms ease;
+  background-position: 0% 0%;
+}
+.login-cta:hover:not(:disabled) {
+  transform: scale(1.02);
+  background-position: 100% 0%;
+  box-shadow: 0 8px 24px -8px rgba(124, 94, 36, 0.55);
+}
+.login-cta:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.login-cta:disabled {
+  background-image: linear-gradient(
+    110deg,
+    var(--brass-500) 30%,
+    var(--brass-200) 45%,
+    var(--brass-500) 60%
+  );
+  background-size: 300% 100%;
+  animation: login-shimmer 1.6s linear infinite;
+}
+
+/* ---- Residence blueprint hero: the house sketches itself, then wakes up ---- */
+
+@keyframes login-draw-line {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes login-window-fade-in {
+  from { opacity: 0; }
+  to { opacity: var(--glow-peak, 0.55); }
+}
+
+@keyframes login-window-pulse {
+  0%, 100% { opacity: 0.32; }
+  50% { opacity: var(--glow-peak, 0.55); }
+}
+
+@keyframes login-label-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.login-draw {
+  fill: none;
+  stroke: var(--brass-400);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation-name: login-draw-line;
+  animation-duration: 1.5s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  animation-fill-mode: forwards;
+}
+
+.login-window {
+  fill: var(--rail-accent);
+  opacity: 0;
+  animation-name: login-window-fade-in, login-window-pulse;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1), ease-in-out;
+  animation-fill-mode: both, both;
+  animation-direction: normal, alternate;
+}
+
+.login-label {
+  position: absolute;
+  opacity: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--rail-text-dim);
+  animation: login-label-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* ---- Live dashboard card: a real, tiny slice of the app, not a stock asset ---- */
+
+@keyframes login-card-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+
+@keyframes login-check-cycle {
+  0%, 12% { opacity: 0; transform: scale(0.5); }
+  22%, 70% { opacity: 1; transform: scale(1); }
+  82%, 100% { opacity: 0; transform: scale(0.5); }
+}
+
+@keyframes login-task-text-cycle {
+  0%, 12% { opacity: 1; text-decoration-color: transparent; }
+  22%, 70% { opacity: 0.55; text-decoration-color: currentColor; }
+  82%, 100% { opacity: 1; text-decoration-color: transparent; }
+}
+
+@keyframes login-progress-fill {
+  0% { width: 8%; }
+  50% { width: 92%; }
+  100% { width: 8%; }
+}
+
+.login-dashboard-card {
+  animation: login-card-float 5.5s ease-in-out infinite, login-fade-scale 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.login-task-check {
+  display: inline-flex;
+  animation: login-check-cycle 3.6s ease-in-out infinite;
+}
+
+.login-task-text {
+  text-decoration-line: line-through;
+  text-decoration-thickness: 1.5px;
+  animation: login-task-text-cycle 3.6s ease-in-out infinite;
+}
+
+.login-progress-bar {
+  animation: login-progress-fill 3.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-anim, .login-anim-scale, .login-float, .login-orb, .login-draw, .login-window, .login-label,
+  .login-dashboard-card, .login-task-check, .login-task-text, .login-progress-bar {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    stroke-dashoffset: 0 !important;
+  }
+}

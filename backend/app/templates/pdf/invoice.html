@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 2.2cm 1.8cm 2.6cm 1.8cm;
+    @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 9px; color: #888; } }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: #1f1f1f; font-size: 11px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8863b; padding-bottom: 14px; margin-bottom: 18px; }
+  .header img { max-height: 56px; max-width: 180px; }
+  .residence-name { font-size: 18px; font-weight: 700; margin: 0 0 4px 0; }
+  .residence-meta { font-size: 10px; color: #555; line-height: 1.5; }
+  .doc-title { text-align: right; }
+  .doc-title h1 { font-size: 20px; margin: 0 0 4px 0; letter-spacing: 0.5px; }
+  .meta-grid { margin-bottom: 18px; }
+  .meta-block p { margin: 0 0 3px 0; }
+  .meta-block .label { color: #888; font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+  th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px; color: #888; border-bottom: 1px solid #ccc; padding: 6px 8px; }
+  td { padding: 7px 8px; border-bottom: 1px solid #eee; }
+  td.num, th.num { text-align: right; }
+  .totals { display: flex; justify-content: flex-end; }
+  .totals table { width: 260px; margin: 0; }
+  .totals td { border: none; padding: 4px 8px; }
+  .totals .grand-total td { font-weight: 700; font-size: 13px; border-top: 2px solid #1f1f1f; padding-top: 8px; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      {% if logo_data_uri %}<img src="{{ logo_data_uri }}">{% endif %}
+      <div class="residence-name">{{ residence.name }}</div>
+      <div class="residence-meta">
+        {% if residence.address %}{{ residence.address }}<br>{% endif %}
+        {% if residence.phone %}{{ residence.phone }}{% endif %}
+      </div>
+    </div>
+    <div class="doc-title">
+      <h1>INVOICE</h1>
+      <div>{{ date }}</div>
+    </div>
+  </div>
+
+  <div class="meta-grid">
+    <div class="meta-block">
+      <p><span class="label">Title</span><br>{{ title }}</p>
+      {% if subtitle %}<p><span class="label">Produced for</span><br>{{ subtitle }}</p>{% endif %}
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Item</th><th class="num">Qty</th><th>Unit</th><th class="num">Unit cost</th><th class="num">Line total</th></tr>
+    </thead>
+    <tbody>
+      {% for item in line_items %}
+      <tr>
+        <td>{{ item.name }}</td>
+        <td class="num">{{ "%.2f"|format(item.qty) }}</td>
+        <td>{{ item.unit }}</td>
+        <td class="num">{{ currency }} {{ "%.3f"|format(item.unit_cost) }}</td>
+        <td class="num">{{ currency }} {{ "%.2f"|format(item.line_total) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="totals">
+    <table>
+      <tr class="grand-total"><td>Total</td><td class="num">{{ currency }} {{ "%.2f"|format(total) }}</td></tr>
+    </table>
+  </div>
+</body>
+</html>

@@ -1,0 +1,21 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+pydantic==2.10.3
+pydantic-settings==2.6.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-multipart==0.0.17
+boto3==1.35.74
+email-validator==2.2.0
+greenlet
+weasyprint==62.3
+# Pinned: weasyprint 62.3's PDF backend is incompatible with pydyf>=0.12
+# (pydyf's Stream API changed) — pip resolves the latest pydyf by default
+# unless pinned here too.
+pydyf==0.11.0
+jinja2==3.1.4
+qrcode[pil]==7.4.2

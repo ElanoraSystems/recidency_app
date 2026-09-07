@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hadlaan
+      POSTGRES_PASSWORD: hadlaan_dev_password
+      POSTGRES_DB: hadlaan
+    ports:
+      - "5433:5432"
+    volumes:
+      - hadlaan_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hadlaan"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  hadlaan_pg_data:
