@@ -20,15 +20,18 @@ services:
         generateValue: true
       - key: ENVIRONMENT
         value: production
-      # These two point at the frontend service below. Render assigns
-      # https://<name>.onrender.com unless that name is already taken by
-      # someone else on Render, in which case update both this and the
-      # frontend's VITE_API_BASE_URL to match whatever URL Render actually
-      # assigns after the first deploy.
+      # The frontend is served from a custom domain, not the default
+      # hadlaan-frontend.onrender.com — CORS_ORIGINS must list every origin
+      # the frontend is actually reachable at (comma-separated; see
+      # Settings.cors_origin_list), or the browser's preflight check fails
+      # with no Access-Control-Allow-Origin header. Keep the .onrender.com
+      # URL too so the default Render URL still works for testing.
       - key: CORS_ORIGINS
-        value: https://hadlaan-frontend.onrender.com
+        value: https://butler.elanorasystems.com,https://hadlaan-frontend.onrender.com
+      # Embedded in generated QR codes (patrol check-in) — must be wherever
+      # real users actually load the app.
       - key: APP_BASE_URL
-        value: https://hadlaan-frontend.onrender.com
+        value: https://butler.elanorasystems.com
 
   - type: web
     name: hadlaan-frontend
