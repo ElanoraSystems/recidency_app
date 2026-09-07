@@ -33,7 +33,9 @@ services:
   - type: web
     name: hadlaan-frontend
     runtime: static
-    region: frankfurt
+    # Static sites are served from Render's global CDN, not a single
+    # region — no `region` field allowed here (unlike the database and
+    # the docker web service above).
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
