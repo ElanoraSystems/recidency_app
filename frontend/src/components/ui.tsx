@@ -227,3 +227,28 @@ export function EmptyState({ label }: { label: string }) {
     </div>
   );
 }
+
+export function DateRangeFilter({
+  from, to, onFromChange, onToChange,
+}: { from: string; to: string; onFromChange: (v: string) => void; onToChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <label className="flex items-center gap-1.5 text-[13px] font-medium" style={{ color: "var(--ink-500)" }}>
+        From
+        <input type="date" value={from} onChange={(e) => onFromChange(e.target.value)}
+          className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }} />
+      </label>
+      <label className="flex items-center gap-1.5 text-[13px] font-medium" style={{ color: "var(--ink-500)" }}>
+        To
+        <input type="date" value={to} onChange={(e) => onToChange(e.target.value)}
+          className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }} />
+      </label>
+      {(from || to) && (
+        <button type="button" onClick={() => { onFromChange(""); onToChange(""); }}
+          className="text-[12px] font-semibold" style={{ color: "var(--brass-600)" }}>
+          Clear
+        </button>
+      )}
+    </div>
+  );
+}

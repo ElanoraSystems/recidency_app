@@ -289,11 +289,13 @@ export interface PurchaseRequestLine {
 
 export interface PurchaseRequest {
   id: string;
+  code: string;
   status: string;
   urgency: string;
   request_date: string;
   requested_by: string | null;
   note: string | null;
+  cost_center: string | null;
   lines: PurchaseRequestLine[];
   total_est_cost: number;
 }
@@ -320,6 +322,8 @@ export interface PurchaseOrder {
   payment_status: string;
   created_by: string | null;
   approved_by: string | null;
+  source_pr_id: string | null;
+  source_pr_code: string | null;
   lines: PoLine[];
 }
 
@@ -335,6 +339,18 @@ export interface ItemMasterEntry {
   stock_id: string;
   category: string;
   avg_price: number;
+  created_at: string;
+  created_by_name: string | null;
+}
+
+export interface ItemMasterTransaction {
+  doc_type: string;
+  code: string;
+  date: string;
+  status: string;
+  qty: number;
+  unit: string;
+  amount: number;
 }
 
 export interface UnitOfMeasureEntry {

@@ -4,9 +4,9 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useCreate, useList, useUpdate } from "../api/hooks";
 import { Icon } from "../components/icons";
-import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
+import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { fmtDate, todayIso } from "../lib/date";
-import type { CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, StaffMember, Supplier, UnitOfMeasureEntry } from "../types";
+import type { CostCenter, CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, StaffMember, Supplier, UnitOfMeasureEntry } from "../types";
 
 interface GrnLine { id: string; name: string; ordered_qty: number; received_qty: number; unit: string; ordered_price: number; price: number }
 interface Grn { id: string; code: string; po_id: string; supplier_id: string; date: string; received_by_name: string | null; lines: GrnLine[] }
@@ -70,38 +70,57 @@ export function Purchasing() {
   );
 }
 
+const PR_STATUS_FILTERS = ["Pending Approval", "Approved", "Rejected", "Ordered"] as const;
+function prStatusBucket(status: string): string {
+  return status.startsWith("Ordered") ? "Ordered" : status;
+}
+
 function RequestsTab() {
   const { data, isLoading } = useList<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
   const { data: staff } = useList<StaffMember>("staff", "/people/staff");
   const qc = useQueryClient();
   const [detail, setDetail] = useState<PurchaseRequest | null>(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const decide = useMutation({
     mutationFn: async ({ id, approve }: { id: string; approve: boolean }) =>
       api.post(`/purchasing/purchase-requests/${id}/decision?approve=${approve}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["purchase-requests"] }),
   });
   const requesterName = (userId: string | null) => staff?.find((s) => s.user_id === userId)?.name ?? "—";
+  const filtered = data?.filter((pr) =>
+    (!dateFrom || pr.request_date >= dateFrom) &&
+    (!dateTo || pr.request_date <= dateTo) &&
+    (!statusFilter || prStatusBucket(pr.status) === statusFilter)
+  );
 
   return (
     <div>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <DateRangeFilter from={dateFrom} to={dateTo} onFromChange={setDateFrom} onToChange={setDateTo} />
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+            className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}>
+            <option value="">All statuses</option>
+            {PR_STATUS_FILTERS.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
         <Link to="/purchasing/requests/new"><Button>+ New Request</Button></Link>
       </div>
 
-      {isLoading ? <Spinner /> : !data || data.length === 0 ? <EmptyState label="No purchase requests." /> : (
+      {isLoading ? <Spinner /> : !filtered || filtered.length === 0 ? <EmptyState label="No purchase requests match these filters." /> : (
         <Table>
-          <thead><tr><Th>Items</Th><Th>Requested by</Th><Th>Date</Th><Th>Urgency</Th><Th>Est. cost</Th><Th>Status</Th><Th>Action</Th></tr></thead>
+          <thead><tr><Th>PR #</Th><Th>Requested by</Th><Th>Date</Th><Th>Total amount</Th><Th>Status</Th><Th>Action</Th></tr></thead>
           <tbody>
-            {data.map((pr) => (
+            {filtered.map((pr) => (
               <tr key={pr.id} className="cursor-pointer" onClick={() => setDetail(pr)}>
                 <Td className="font-medium">
-                  {pr.lines[0]?.item_name ?? "empty request"}
-                  {pr.lines.length > 1 && <span style={{ color: "var(--ink-400)" }}> +{pr.lines.length - 1} more</span>}
+                  {pr.code}
                   <div className="text-xs" style={{ color: "var(--ink-400)" }}>{pr.lines.length} item(s)</div>
                 </Td>
                 <Td>{requesterName(pr.requested_by)}</Td>
                 <Td>{fmtDate(pr.request_date)}</Td>
-                <Td><Badge tone={statusTone(pr.urgency)}>{pr.urgency}</Badge></Td>
                 <Td>KWD {pr.total_est_cost.toFixed(2)}</Td>
                 <Td><Badge tone={statusTone(pr.status)}>{pr.status}</Badge></Td>
                 <Td onClick={(e) => e.stopPropagation()}>
@@ -122,7 +141,12 @@ function RequestsTab() {
       )}
 
       {detail && (
-        <Modal title={`Request — ${detail.lines.length} item(s)`} onClose={() => setDetail(null)}>
+        <Modal title={`${detail.code} — ${detail.lines.length} item(s)`} onClose={() => setDetail(null)}>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <Badge tone={statusTone(detail.urgency)}>{detail.urgency} urgency</Badge>
+            <Badge>{detail.cost_center ?? "No cost center"}</Badge>
+            <Badge tone={statusTone(detail.status)}>{detail.status}</Badge>
+          </div>
           <Table>
             <thead><tr><Th>Item</Th><Th>Qty</Th><Th>Category</Th><Th>Est. cost</Th></tr></thead>
             <tbody>
@@ -154,15 +178,18 @@ export function NewPurchaseRequestPage() {
   const { data: itemMaster } = useList<ItemMasterEntry>("item-master", "/item-master");
   const { data: uomsRaw } = useList<UnitOfMeasureEntry>("units-of-measure", "/units-of-measure");
   const uoms = [...(uomsRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
+  const { data: costCentersRaw } = useList<CostCenter>("cost-centers", "/kitchen/cost-centers");
+  const costCenters = [...(costCentersRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
   const create = useCreate<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
   const [lines, setLines] = useState<RequestLine[]>([newRequestLine("")]);
   const [urgency, setUrgency] = useState("Medium");
+  const [costCenter, setCostCenter] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (uoms.length === 0) return;
-    setLines((ls) => ls.map((l) => (l.unit ? l : { ...l, unit: uoms[0].label })));
+    setLines((ls) => (ls.every((l) => l.unit) ? ls : ls.map((l) => (l.unit ? l : { ...l, unit: uoms[0].label }))));
   }, [uoms]);
 
   function updateLine(i: number, patch: Partial<RequestLine>) {
@@ -187,7 +214,7 @@ export function NewPurchaseRequestPage() {
     setSubmitting(true);
     try {
       await create.mutateAsync({
-        urgency, note: note || null,
+        urgency, note: note || null, cost_center: costCenter,
         lines: lines.map((l) => ({
           item_master_id: l.itemRef || null, item_name: l.item, qty: l.qty,
           unit: l.unit, category: l.category, est_cost: l.est_cost,
@@ -213,7 +240,14 @@ export function NewPurchaseRequestPage() {
               {["Low", "Medium", "High"].map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Note (optional)
+          <label className="flex flex-col gap-1 text-[13px] font-medium">Cost center
+            <select required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+              value={costCenter} onChange={(e) => setCostCenter(e.target.value)}>
+              <option value="">— Select a cost center —</option>
+              {costCenters.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
+            </select>
+          </label>
+          <label className="col-span-2 flex flex-col gap-1 text-[13px] font-medium">Note (optional)
             <input className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
               value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
@@ -275,7 +309,7 @@ export function NewPurchaseRequestPage() {
           <Button type="button" variant="secondary" onClick={addLine}>+ Add another item</Button>
           <span className="text-[13px] font-semibold">Total est. cost: KWD {totalEstCost.toFixed(2)}</span>
         </div>
-        <Button type="submit" disabled={submitting} className="self-start">
+        <Button type="submit" disabled={submitting || !costCenter} className="self-start">
           {submitting ? "Submitting..." : `Submit Request (${lines.length} item${lines.length > 1 ? "s" : ""})`}
         </Button>
       </form>
@@ -427,6 +461,10 @@ function OrdersTab() {
   const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
   const qc = useQueryClient();
   const [detail, setDetail] = useState<PurchaseOrder | null>(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [supplierFilter, setSupplierFilter] = useState("");
   const decide = useMutation({
     mutationFn: async ({ id, approve }: { id: string; approve: boolean }) =>
       api.post(`/purchasing/purchase-orders/${id}/decision?approve=${approve}`),
@@ -434,6 +472,13 @@ function OrdersTab() {
   });
 
   const supplierName = (id: string) => suppliers?.find((s) => s.id === id)?.name ?? "—";
+  const statusOptions = [...new Set((data ?? []).map((po) => po.status))].sort();
+  const filtered = data?.filter((po) =>
+    (!dateFrom || po.order_date >= dateFrom) &&
+    (!dateTo || po.order_date <= dateTo) &&
+    (!statusFilter || po.status === statusFilter) &&
+    (!supplierFilter || po.supplier_id === supplierFilter)
+  );
 
   async function downloadPoPdf(po: PurchaseOrder) {
     // A plain <a href> won't carry the Bearer token — fetch as an
@@ -445,14 +490,28 @@ function OrdersTab() {
   }
 
   if (isLoading) return <Spinner />;
-  if (!data || data.length === 0) return <EmptyState label="No purchase orders." />;
 
   return (
     <div>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <DateRangeFilter from={dateFrom} to={dateTo} onFromChange={setDateFrom} onToChange={setDateTo} />
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+          className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}>
+          <option value="">All statuses</option>
+          {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)}
+          className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}>
+          <option value="">All suppliers</option>
+          {suppliers?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </div>
+
+      {!filtered || filtered.length === 0 ? <EmptyState label="No purchase orders match these filters." /> : (
       <Table>
         <thead><tr><Th>PO</Th><Th>Supplier</Th><Th>Items</Th><Th>Ordered</Th><Th>Expected</Th><Th>Total</Th><Th>Status</Th><Th>Payment</Th><Th>{" "}</Th></tr></thead>
         <tbody>
-          {data.map((po) => {
+          {filtered.map((po) => {
             const recv = po.lines.reduce((s, l) => s + l.received_qty, 0);
             const ord = po.lines.reduce((s, l) => s + l.qty, 0);
             return (
@@ -481,6 +540,7 @@ function OrdersTab() {
           })}
         </tbody>
       </Table>
+      )}
 
       {detail && (
         <Modal title={detail.code} onClose={() => setDetail(null)}>
@@ -508,6 +568,7 @@ function OrdersTab() {
               <InfoRow label="Order date" value={fmtDate(detail.order_date)} />
               <InfoRow label="Expected" value={detail.expected_date ? fmtDate(detail.expected_date) : "—"} />
               <InfoRow label="Total" value={`KWD ${detail.total.toFixed(2)}`} />
+              <InfoRow label="Source request" value={detail.source_pr_code ?? "Direct order"} />
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={() => downloadPoPdf(detail)}>Download PDF</Button>
@@ -668,18 +729,35 @@ function GoodsReceivedTab() {
   const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
   const { data: orders } = useList<PurchaseOrder>("purchase-orders", "/purchasing/purchase-orders");
   const [detail, setDetail] = useState<Grn | null>(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [supplierFilter, setSupplierFilter] = useState("");
   const supplierName = (id: string) => suppliers?.find((s) => s.id === id)?.name ?? "—";
   const poCode = (id: string) => orders?.find((o) => o.id === id)?.code ?? id.slice(0, 8);
+  const filtered = grns?.filter((g) =>
+    (!dateFrom || g.date >= dateFrom) &&
+    (!dateTo || g.date <= dateTo) &&
+    (!supplierFilter || g.supplier_id === supplierFilter)
+  );
 
   if (isLoading) return <Spinner />;
-  if (!grns || grns.length === 0) return <EmptyState label="No goods received yet — receive an ordered PO to see it here." />;
 
   return (
     <div>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <DateRangeFilter from={dateFrom} to={dateTo} onFromChange={setDateFrom} onToChange={setDateTo} />
+        <select value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)}
+          className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}>
+          <option value="">All suppliers</option>
+          {suppliers?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </div>
+
+      {!filtered || filtered.length === 0 ? <EmptyState label="No goods received match these filters." /> : (
       <Table>
         <thead><tr><Th>GRN</Th><Th>PO</Th><Th>Supplier</Th><Th>Date</Th><Th>Received by</Th><Th>Lines</Th><Th>Value</Th></tr></thead>
         <tbody>
-          {grns.map((g) => {
+          {filtered.map((g) => {
             const value = g.lines.reduce((s, l) => s + l.received_qty * l.price, 0);
             return (
               <tr key={g.id} className="cursor-pointer" onClick={() => setDetail(g)}>
@@ -695,6 +773,7 @@ function GoodsReceivedTab() {
           })}
         </tbody>
       </Table>
+      )}
 
       {detail && (
         <Modal title={detail.code} onClose={() => setDetail(null)}>

@@ -252,6 +252,7 @@ def build_restock_schedule(food_by_name: dict, base_cost: dict[str, float]) -> d
 
 async def receive_batch(db, item: FoodInventory, item_master: ItemMaster, supplier: Supplier, actor: User, day: int, qty: float, price: float):
     pr = PurchaseRequest(
+        code=await _next_code(db, PurchaseRequest, "PR", 3001),
         requested_by=actor.id, request_date=D(day), status="Approved", urgency="Medium",
     )
     db.add(pr)

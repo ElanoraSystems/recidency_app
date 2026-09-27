@@ -96,11 +96,11 @@ export function Login() {
           style={{ paddingLeft: revealed ? "56px" : "clamp(24px, 6vw, 96px)" }}
         >
           <div className="login-anim-scale h-11 w-11 shrink-0 overflow-hidden rounded-[10px]">
-            <img src={logoMark} alt="Butler Hadlaan House" className="h-full w-full object-cover" />
+            <img src={logoMark} alt="Hadlaan House" className="h-full w-full object-cover" />
           </div>
           <div className="login-anim-scale" style={{ animationDelay: "80ms" }}>
             <div className="font-display text-lg font-semibold" style={{ color: "var(--rail-text-active)" }}>
-              Butler Hadlaan House
+              Hadlaan House
             </div>
             <div className="text-[10.5px] uppercase tracking-wider" style={{ color: "var(--rail-text-dim)" }}>
               Private Residence Management
@@ -159,10 +159,10 @@ export function Login() {
         <div className="w-full max-w-sm px-6">
           <div className="login-anim-scale mb-6 flex flex-col items-center gap-3 lg:hidden">
             <div className="h-11 w-11 shrink-0 overflow-hidden rounded-[10px]">
-              <img src={logoMark} alt="Butler Hadlaan House" className="h-full w-full object-cover" />
+              <img src={logoMark} alt="Hadlaan House" className="h-full w-full object-cover" />
             </div>
             <div className="text-center">
-              <div className="font-display text-xl font-semibold">Butler Hadlaan House</div>
+              <div className="font-display text-xl font-semibold">Hadlaan House</div>
               <div className="text-xs" style={{ color: "var(--ink-500)" }}>
                 Private Residence Management
               </div>
@@ -226,6 +226,10 @@ export function Login() {
           >
             Local dev seed password for every account: <code>password123</code>. Try{" "}
             <code>aiko.t@residence.local</code> (Chef) or <code>ramon.v@residence.local</code> (Manager).
+          </div>
+
+          <div className="mt-6 text-center text-[11px]" style={{ color: "var(--ink-400)" }}>
+            © {new Date().getFullYear()} Butler · Elanora Systems
           </div>
         </div>
       </div>

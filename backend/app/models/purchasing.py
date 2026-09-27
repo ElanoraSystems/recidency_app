@@ -97,6 +97,9 @@ class ItemMaster(Base, UUIDPKMixin, TimestampMixin):
     preferred_supplier_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True
     )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     stock_type: Mapped[str] = mapped_column(String(10))  # food | general
     stock_id: Mapped[uuid.UUID] = mapped_column()  # points into food_inventory or inventory
@@ -133,6 +136,7 @@ class PurchaseRequest(Base, UUIDPKMixin, TimestampMixin):
 
     __tablename__ = "purchase_requests"
 
+    code: Mapped[str] = mapped_column(String(20), unique=True)  # PR-3001
     requested_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -140,6 +144,10 @@ class PurchaseRequest(Base, UUIDPKMixin, TimestampMixin):
     status: Mapped[str] = mapped_column(String(30), default="Pending Approval")
     urgency: Mapped[str] = mapped_column(String(20), default="Medium")
     note: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Owner-managed list (Settings -> Cost Centers) — which budget the
+    # request is charged to. Required for a new request; nullable so
+    # requests created before this field existed stay valid.
+    cost_center: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
 
 class PurchaseRequestLine(Base, UUIDPKMixin):

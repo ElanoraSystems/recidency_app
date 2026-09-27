@@ -7,6 +7,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useTheme } from "../auth/ThemeContext";
 import { Icon } from "../components/icons";
 import { initials, roleLabel } from "../lib/roles";
+import { toast } from "../lib/toast";
 import type { ApprovalItem } from "../types";
 import { GlobalSearch } from "./GlobalSearch";
 import { NAV } from "./nav";
@@ -21,7 +22,7 @@ export function Shell() {
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const visibleNav = NAV.filter((n) => hasModule(n.id));
+  const visibleNav = NAV.filter((n) => n.locked || hasModule(n.id));
   const activeNavItem = visibleNav.find((n) => (n.path === "/" ? location.pathname === "/" : location.pathname.startsWith(n.path)));
 
   const { data: approvals } = useQuery<ApprovalItem[]>({
@@ -31,8 +32,11 @@ export function Shell() {
     staleTime: 30_000,
   });
 
-  const primaryMobile = visibleNav.slice(0, MOBILE_PRIMARY_MAX);
-  const overflowMobile = visibleNav.slice(MOBILE_PRIMARY_MAX);
+  // Locked items never take a primary mobile slot — that bar has room for
+  // 4 icons and every one of them should be a real, working module.
+  const unlockedNav = visibleNav.filter((n) => !n.locked);
+  const primaryMobile = unlockedNav.slice(0, MOBILE_PRIMARY_MAX);
+  const overflowMobile = [...unlockedNav.slice(MOBILE_PRIMARY_MAX), ...visibleNav.filter((n) => n.locked)];
 
   return (
     <div className="flex min-h-screen">
@@ -47,11 +51,11 @@ export function Shell() {
       >
         <div className="flex items-center gap-2.5 px-4 pb-4 pt-[22px] lg:px-5">
           <div className="h-[34px] w-[34px] shrink-0 overflow-hidden rounded-[9px]">
-            <img src={logoMark} alt="Butler Hadlaan House" className="h-full w-full object-cover" />
+            <img src={logoMark} alt="Hadlaan House" className="h-full w-full object-cover" />
           </div>
           <div className="hidden lg:block">
             <div className="font-display text-[18px] font-semibold leading-tight" style={{ color: "var(--rail-text-active)" }}>
-              Butler Hadlaan House
+              Hadlaan House
             </div>
             <div className="text-[10.5px] uppercase tracking-wider" style={{ color: "var(--rail-text-dim)" }}>
               {user?.user_type === "owner" ? "Owner Console" : roleLabel(user)}
@@ -62,6 +66,22 @@ export function Shell() {
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 py-1.5 lg:px-3">
           {visibleNav.map((n) => {
             const badgeCount = n.id === "approvals" ? approvals?.length ?? 0 : 0;
+            if (n.locked) {
+              return (
+                <button
+                  key={n.id}
+                  type="button"
+                  title={`${n.label} — not included in this deployment`}
+                  onClick={() => toast(`${n.label} is not included in this deployment — contact Elanora Systems to enable it.`)}
+                  className="flex items-center gap-2.5 rounded-lg py-2 pl-[9px] pr-2.5 text-[13px] font-semibold transition-colors hover:bg-white/5 lg:pr-3"
+                  style={{ color: "var(--rail-text-dim)", justifyContent: "flex-start", opacity: 0.55 }}
+                >
+                  <Icon name={n.icon} className="h-[17px] w-[17px] shrink-0" />
+                  <span className="hidden flex-1 text-left lg:inline">{n.label}</span>
+                  <Icon name="lock" className="h-[13px] w-[13px] shrink-0" />
+                </button>
+              );
+            }
             return (
               <NavLink
                 key={n.id}
@@ -132,6 +152,9 @@ export function Shell() {
             <Icon name="logout" className="h-[15px] w-[15px]" />
             <span className="hidden lg:inline">Sign out</span>
           </button>
+          <div className="mt-2 hidden truncate text-center text-[10px] lg:block" style={{ color: "var(--rail-text-dim)" }}>
+            © {new Date().getFullYear()} Butler · Elanora Systems
+          </div>
         </div>
       </aside>
 
@@ -142,7 +165,7 @@ export function Shell() {
           style={{ background: "color-mix(in srgb, var(--bg) 88%, transparent)", borderColor: "var(--border)" }}
         >
           <div className="shrink-0 font-display text-[19px] font-semibold" style={{ color: "var(--ink-900)" }}>
-            {activeNavItem?.label ?? "Butler Hadlaan House"}
+            {activeNavItem?.label ?? "Hadlaan House"}
           </div>
           <GlobalSearch />
           <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -172,10 +195,10 @@ export function Shell() {
           style={{ background: "color-mix(in srgb, var(--bg) 92%, transparent)", borderColor: "var(--border)" }}
         >
           <div className="h-[30px] w-[30px] shrink-0 overflow-hidden rounded-[8px]">
-            <img src={logoMark} alt="Butler Hadlaan House" className="h-full w-full object-cover" />
+            <img src={logoMark} alt="Hadlaan House" className="h-full w-full object-cover" />
           </div>
           <div className="min-w-0 flex-1 truncate font-display text-[17px] font-semibold" style={{ color: "var(--ink-900)" }}>
-            {activeNavItem?.label ?? "Butler Hadlaan House"}
+            {activeNavItem?.label ?? "Hadlaan House"}
           </div>
           <button
             onClick={toggleTheme}
@@ -247,10 +270,18 @@ export function Shell() {
               {visibleNav.map((n) => (
                 <button
                   key={n.id}
-                  onClick={() => { navigate(n.path); setMoreOpen(false); }}
-                  className="flex flex-col items-center gap-1.5 rounded-xl px-2 py-3"
-                  style={{ background: "var(--surface-sunken)" }}
+                  onClick={() => {
+                    if (n.locked) {
+                      toast(`${n.label} is not included in this deployment — contact Elanora Systems to enable it.`);
+                    } else {
+                      navigate(n.path);
+                      setMoreOpen(false);
+                    }
+                  }}
+                  className="relative flex flex-col items-center gap-1.5 rounded-xl px-2 py-3"
+                  style={{ background: "var(--surface-sunken)", opacity: n.locked ? 0.55 : 1 }}
                 >
+                  {n.locked && <Icon name="lock" className="absolute right-1.5 top-1.5 h-3 w-3" style={{ color: "var(--ink-400)" }} />}
                   <Icon name={n.icon} className="h-5 w-5" style={{ color: "var(--brass-600)" }} />
                   <span className="text-center text-[10.5px] font-semibold leading-tight" style={{ color: "var(--ink-700)" }}>{n.label}</span>
                 </button>

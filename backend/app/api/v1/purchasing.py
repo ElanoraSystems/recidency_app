@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
@@ -54,16 +54,19 @@ class PurchaseRequestLineOut(PurchaseRequestLineIn):
 class PurchaseRequestIn(BaseModel):
     urgency: str = "Medium"
     note: str | None = None
+    cost_center: str
     lines: list[PurchaseRequestLineIn]
 
 
 class PurchaseRequestOut(BaseModel):
     id: uuid.UUID
+    code: str
     request_date: date
     status: str
     urgency: str
     requested_by: uuid.UUID | None
     note: str | None
+    cost_center: str | None
     lines: list[PurchaseRequestLineOut]
     total_est_cost: float
 
@@ -81,8 +84,8 @@ async def _pr_out(db: AsyncSession, pr: PurchaseRequest) -> PurchaseRequestOut:
         for l in result.scalars().all()
     ]
     return PurchaseRequestOut(
-        id=pr.id, request_date=pr.request_date, status=pr.status, urgency=pr.urgency,
-        requested_by=pr.requested_by, note=pr.note, lines=lines,
+        id=pr.id, code=pr.code, request_date=pr.request_date, status=pr.status, urgency=pr.urgency,
+        requested_by=pr.requested_by, note=pr.note, cost_center=pr.cost_center, lines=lines,
         total_est_cost=round(sum(l.est_cost for l in lines), 2),
     )
 
@@ -104,8 +107,9 @@ async def create_purchase_request(
     if not payload.lines:
         raise HTTPException(400, "A purchase request needs at least one line item")
     pr = PurchaseRequest(
+        code=await _next_code(db, PurchaseRequest, "PR", 3001),
         request_date=date.today(), status="Pending Approval",
-        urgency=payload.urgency, note=payload.note, requested_by=user.id,
+        urgency=payload.urgency, note=payload.note, cost_center=payload.cost_center, requested_by=user.id,
     )
     db.add(pr)
     await db.flush()
@@ -171,6 +175,8 @@ class PurchaseOrderOut(BaseModel):
     payment_status: str
     created_by: uuid.UUID | None
     approved_by: uuid.UUID | None
+    source_pr_id: uuid.UUID | None
+    source_pr_code: str | None
     lines: list[PoLineOut]
 
     class Config:
@@ -180,6 +186,9 @@ class PurchaseOrderOut(BaseModel):
 async def _po_out(db: AsyncSession, po: PurchaseOrder) -> PurchaseOrderOut:
     result = await db.execute(select(PoLine).where(PoLine.po_id == po.id))
     lines = result.scalars().all()
+    source_pr_code = None
+    if po.source_pr_id:
+        source_pr_code = await db.scalar(select(PurchaseRequest.code).where(PurchaseRequest.id == po.source_pr_id))
     return PurchaseOrderOut(
         id=po.id,
         code=po.code,
@@ -191,6 +200,8 @@ async def _po_out(db: AsyncSession, po: PurchaseOrder) -> PurchaseOrderOut:
         payment_status=po.payment_status,
         created_by=po.created_by,
         approved_by=po.approved_by,
+        source_pr_id=po.source_pr_id,
+        source_pr_code=source_pr_code,
         lines=[
             PoLineOut(
                 id=line.id,
@@ -286,6 +297,8 @@ class ItemMasterOut(ItemMasterIn):
     # category and par levels have exactly one source of truth: Stock.
     category: str
     avg_price: float
+    created_at: datetime
+    created_by_name: str | None
 
     class Config:
         from_attributes = True
@@ -299,11 +312,12 @@ async def _stock_lookup(db: AsyncSession, stock_type: str, stock_id: uuid.UUID) 
     return (stock.category, float(stock.avg_price)) if stock else ("—", 0.0)
 
 
-def _item_master_out(item: ItemMaster, category: str, avg_price: float) -> ItemMasterOut:
+def _item_master_out(item: ItemMaster, category: str, avg_price: float, created_by_name: str | None = None) -> ItemMasterOut:
     return ItemMasterOut(
         id=item.id, code=item.code, name=item.name, uom=item.uom, last_price=item.last_price,
         preferred_supplier_id=item.preferred_supplier_id, active=item.active,
         stock_type=item.stock_type, stock_id=item.stock_id, category=category, avg_price=avg_price,
+        created_at=item.created_at, created_by_name=created_by_name,
     )
 
 
@@ -343,15 +357,21 @@ async def list_item_master(db: AsyncSession = Depends(get_db), _user: User = Dep
     if general_ids:
         result = await db.execute(select(Inventory).where(Inventory.id.in_(general_ids)))
         general_rows = {r.id: r for r in result.scalars().all()}
+    creator_ids = {i.created_by for i in items if i.created_by}
+    creator_names = {}
+    if creator_ids:
+        result = await db.execute(select(User.id, User.name).where(User.id.in_(creator_ids)))
+        creator_names = dict(result.all())
 
     out = []
     for item in items:
         stock = (food_rows if item.stock_type == "food" else general_rows).get(item.stock_id)
+        creator_name = creator_names.get(item.created_by)
         if stock is None:
-            out.append(_item_master_out(item, "—", 0.0))
+            out.append(_item_master_out(item, "—", 0.0, creator_name))
         else:
             avg_price = float(stock.cost if item.stock_type == "food" else stock.avg_price)
-            out.append(_item_master_out(item, stock.category, avg_price))
+            out.append(_item_master_out(item, stock.category, avg_price, creator_name))
     return out
 
 
@@ -363,7 +383,8 @@ async def get_item_master(
     if not item:
         raise HTTPException(404, "Item master entry not found")
     category, avg_price = await _stock_lookup(db, item.stock_type, item.stock_id)
-    return _item_master_out(item, category, avg_price)
+    creator_name = await db.scalar(select(User.name).where(User.id == item.created_by)) if item.created_by else None
+    return _item_master_out(item, category, avg_price, creator_name)
 
 
 @item_master_router.post("", response_model=ItemMasterOut, status_code=201)
@@ -375,6 +396,7 @@ async def create_item_master(
     at all (generic_routes.py) for why every item-master route lives here."""
     item = ItemMaster(
         code=await _next_item_code(db),
+        created_by=user.id,
         **payload.model_dump(),
     )
     db.add(item)
@@ -382,7 +404,68 @@ async def create_item_master(
     await db.commit()
     await db.refresh(item)
     category, avg_price = await _stock_lookup(db, item.stock_type, item.stock_id)
-    return _item_master_out(item, category, avg_price)
+    return _item_master_out(item, category, avg_price, user.name)
+
+
+class ItemMasterTransactionOut(BaseModel):
+    doc_type: str  # "Purchase Request" | "Purchase Order" | "Goods Received"
+    code: str
+    date: date
+    status: str
+    qty: float
+    unit: str
+    amount: float
+
+
+@item_master_router.get("/{item_id}/transactions", response_model=list[ItemMasterTransactionOut])
+async def item_master_transactions(
+    item_id: uuid.UUID, db: AsyncSession = Depends(get_db), _user: User = Depends(purchasing_access)
+):
+    """Every PR line, PO line and GRN line that ever referenced this catalog
+    item, newest first — the audit trail a buyer needs when asking "where
+    has this item actually been ordered/received"."""
+    item = await db.get(ItemMaster, item_id)
+    if not item:
+        raise HTTPException(404, "Item master entry not found")
+
+    out: list[ItemMasterTransactionOut] = []
+
+    pr_rows = (await db.execute(
+        select(PurchaseRequestLine, PurchaseRequest)
+        .join(PurchaseRequest, PurchaseRequest.id == PurchaseRequestLine.pr_id)
+        .where(PurchaseRequestLine.item_master_id == item_id)
+    )).all()
+    for line, pr in pr_rows:
+        out.append(ItemMasterTransactionOut(
+            doc_type="Purchase Request", code=pr.code, date=pr.request_date, status=pr.status,
+            qty=float(line.qty), unit=line.unit, amount=float(line.est_cost),
+        ))
+
+    po_rows = (await db.execute(
+        select(PoLine, PurchaseOrder)
+        .join(PurchaseOrder, PurchaseOrder.id == PoLine.po_id)
+        .where(PoLine.item_master_id == item_id)
+    )).all()
+    for line, po in po_rows:
+        out.append(ItemMasterTransactionOut(
+            doc_type="Purchase Order", code=po.code, date=po.order_date, status=po.status,
+            qty=float(line.qty), unit=line.unit, amount=float(line.qty) * float(line.price),
+        ))
+
+    grn_rows = (await db.execute(
+        select(GrnLine, Grn)
+        .join(Grn, Grn.id == GrnLine.grn_id)
+        .join(PoLine, PoLine.id == GrnLine.po_line_id)
+        .where(PoLine.item_master_id == item_id)
+    )).all()
+    for line, grn in grn_rows:
+        out.append(ItemMasterTransactionOut(
+            doc_type="Goods Received", code=grn.code, date=grn.date, status="Received",
+            qty=float(line.received_qty), unit=line.unit, amount=float(line.received_qty) * float(line.price),
+        ))
+
+    out.sort(key=lambda t: t.date, reverse=True)
+    return out
 
 
 class ItemMasterPatch(BaseModel):

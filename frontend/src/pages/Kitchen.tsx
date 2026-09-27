@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useCreate, useList } from "../api/hooks";
 import { Icon } from "../components/icons";
-import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
+import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { daysUntil, todayIso } from "../lib/date";
 import type { CostCenter, FoodInventoryBatchEntry, FoodInventoryItem, MealCategory, MealLogEntry, ProposedMenu, Recipe, RecipeIngredient, StockTransfer, UnitOfMeasureEntry, WasteLog, WasteReason, WeeklyMealPlan, WeeklyMealPlanEntry } from "../types";
 
@@ -592,7 +592,17 @@ function FoodBatchesModal({ item, onClose }: { item: FoodInventoryItem; onClose:
 function RawMaterialTransferTab({ modal, setModal }: { modal: boolean; setModal: (v: boolean) => void }) {
   const { data: foodInventory } = useList<FoodInventoryItem>("food-inventory", "/kitchen/food-inventory");
   const { data: transfers, isLoading } = useList<StockTransfer>("stock-transfers", "/kitchen/stock-transfers");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [reasonFilter, setReasonFilter] = useState("");
   if (isLoading) return <Spinner />;
+
+  const reasonOptions = [...new Set((transfers ?? []).map((t) => t.reason))].sort();
+  const filtered = (transfers ?? []).filter((t) =>
+    (!dateFrom || t.date >= dateFrom) &&
+    (!dateTo || t.date <= dateTo) &&
+    (!reasonFilter || t.reason === reasonFilter)
+  );
 
   return (
     <div>
@@ -600,11 +610,19 @@ function RawMaterialTransferTab({ modal, setModal }: { modal: boolean; setModal:
         Log raw materials pulled directly from stock, without going through a recipe or the Meal Log — for urgent
         situations with no time to build a recipe first. Each transfer deducts food inventory immediately.
       </p>
-      {!transfers || transfers.length === 0 ? (
-        <EmptyState label="No raw material transfers logged yet." />
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <DateRangeFilter from={dateFrom} to={dateTo} onFromChange={setDateFrom} onToChange={setDateTo} />
+        <select value={reasonFilter} onChange={(e) => setReasonFilter(e.target.value)}
+          className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}>
+          <option value="">All reasons</option>
+          {reasonOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+      </div>
+      {filtered.length === 0 ? (
+        <EmptyState label="No raw material transfers match these filters." />
       ) : (
         <div className="flex flex-col gap-2">
-          {transfers.map((t) => (
+          {filtered.map((t) => (
             <Card key={t.id} className="!p-3">
               <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[13px] font-semibold">{t.reason}</span>
@@ -735,7 +753,18 @@ function NewStockTransferModal({ foodInventory, onClose }: { foodInventory: Food
 function WasteLogTab({ modal, setModal }: { modal: boolean; setModal: (v: boolean) => void }) {
   const { data: foodInventory } = useList<FoodInventoryItem>("food-inventory", "/kitchen/food-inventory");
   const { data: wasteLogs, isLoading } = useList<WasteLog>("waste-log", "/kitchen/waste-log");
+  const { data: reasonsRaw } = useList<WasteReason>("waste-reasons", "/kitchen/waste-reasons");
+  const reasons = [...(reasonsRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [reasonFilter, setReasonFilter] = useState("");
   if (isLoading) return <Spinner />;
+
+  const filtered = (wasteLogs ?? []).filter((w) =>
+    (!dateFrom || w.date >= dateFrom) &&
+    (!dateTo || w.date <= dateTo) &&
+    (!reasonFilter || w.reason === reasonFilter)
+  );
 
   return (
     <div>
@@ -743,11 +772,19 @@ function WasteLogTab({ modal, setModal }: { modal: boolean; setModal: (v: boolea
         Log spoiled or wasted stock as it happens. Each entry deducts food inventory immediately and goes to a
         supervisor for review — reviewing doesn't change the stock, it's a sign-off on the record.
       </p>
-      {!wasteLogs || wasteLogs.length === 0 ? (
-        <EmptyState label="No waste logged yet." />
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <DateRangeFilter from={dateFrom} to={dateTo} onFromChange={setDateFrom} onToChange={setDateTo} />
+        <select value={reasonFilter} onChange={(e) => setReasonFilter(e.target.value)}
+          className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}>
+          <option value="">All reasons</option>
+          {reasons.map((r) => <option key={r.id} value={r.label}>{r.label}</option>)}
+        </select>
+      </div>
+      {filtered.length === 0 ? (
+        <EmptyState label="No waste logs match these filters." />
       ) : (
         <div className="flex flex-col gap-3">
-          {wasteLogs.map((w) => {
+          {filtered.map((w) => {
             const total = w.lines.reduce((s, l) => s + l.line_cost, 0);
             return (
               <Card key={w.id} className="!p-3">
@@ -929,15 +966,34 @@ function NewWasteLogModal({ foodInventory, onClose }: { foodInventory: FoodInven
 
 function MealLogTab({ modal, setModal }: { modal: boolean; setModal: (v: boolean) => void }) {
   const { data: mealLog, isLoading } = useList<MealLogEntry>("meal-log", "/kitchen/meal-log");
+  const { data: mealCategoriesRaw } = useList<MealCategory>("meal-categories", "/kitchen/meal-categories");
+  const mealCategories = [...(mealCategoriesRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
 
   if (isLoading) return <Spinner />;
 
-  const sorted = [...(mealLog ?? [])].sort((a, b) => b.date.localeCompare(a.date));
+  const filtered = (mealLog ?? []).filter((m) =>
+    (!dateFrom || m.date >= dateFrom) &&
+    (!dateTo || m.date <= dateTo) &&
+    (!categoryFilter || m.category === categoryFilter)
+  );
+  const sorted = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
 
   return (
     <div>
-      {!mealLog || mealLog.length === 0 ? (
-        <EmptyState label="No meals logged yet." />
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <DateRangeFilter from={dateFrom} to={dateTo} onFromChange={setDateFrom} onToChange={setDateTo} />
+        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}
+          className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}>
+          <option value="">All categories</option>
+          {mealCategories.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
+        </select>
+      </div>
+
+      {sorted.length === 0 ? (
+        <EmptyState label="No meals match these filters." />
       ) : (
         <Table>
           <thead>

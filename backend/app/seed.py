@@ -75,7 +75,7 @@ async def seed() -> None:
             return
 
         db.add(ResidenceSettings(
-            name="Butler Hadlaan House", location="Kuwait City, Kuwait",
+            name="Hadlaan House", location="Kuwait City, Kuwait",
             currency="KWD", timezone="Asia/Kuwait", monthly_budget=6500,
         ))
 
@@ -91,7 +91,7 @@ async def seed() -> None:
 
         # -------------------------------------------------- owner + staff --
         owner_user = User(
-            user_type="owner", name="Intisar Salem Al Ali Al Sabah", email="owner@hadlaan.local",
+            user_type="owner", name="Admin", email="owner@hadlaan.local",
             password_hash=hash_password(DEV_PASSWORD), role_id=roles["owner"].id,
         )
         db.add(owner_user)
@@ -153,7 +153,7 @@ async def seed() -> None:
 
         # -------------------------------------------------------- family --
         family_defs = [
-            ("Intisar Salem Al Ali Al Sabah", "Residence Owner", "No red meat", "None", "Prefers herbal tea."),
+            ("Admin", "Residence Owner", "No red meat", "None", "Prefers herbal tea."),
             ("Family Member — Spouse", "Spouse", "Low sodium", "Shellfish", "Evening coffee on the terrace."),
             ("Family Member — Daughter", "Daughter", "Vegetarian on weekdays", "Peanuts", "Piano room kept tidy."),
             ("Family Member — Son", "Son", "No restrictions", "None", "Football gear laundered daily."),
@@ -393,10 +393,10 @@ async def seed() -> None:
             item_master[name] = im
 
         # -------------------------------------------------- purchase chain --
-        pr1 = PurchaseRequest(requested_by=staff_users["stf-3"].id, request_date=D(-1),
-                               status="Pending Approval", urgency="High")
-        pr2 = PurchaseRequest(requested_by=staff_users["stf-8"].id, request_date=D(-2),
-                               status="Pending Approval", urgency="High")
+        pr1 = PurchaseRequest(code="PR-3001", requested_by=staff_users["stf-3"].id, request_date=D(-1),
+                               status="Pending Approval", urgency="High", cost_center="Staff")
+        pr2 = PurchaseRequest(code="PR-3002", requested_by=staff_users["stf-8"].id, request_date=D(-2),
+                               status="Pending Approval", urgency="High", cost_center="Guests")
         db.add_all([pr1, pr2])
         await db.flush()
         db.add(PurchaseRequestLine(pr_id=pr1.id, item_master_id=item_master["Toilet Paper (12-pack)"].id,
@@ -514,12 +514,7 @@ async def seed() -> None:
 
         # ---------------------------------------------------------- tasks --
         task_defs = [
-            ("Clean master bedroom & en-suite", "Housekeeping", "stf-3", "Master Bedroom", "High", D(0), "In Progress"),
             ("Prepare lunch menu for family", "Kitchen", "stf-2", "Main Kitchen", "High", D(0), "Completed"),
-            ("Vacuum & mop living room", "Housekeeping", "stf-4", "Living Room", "Medium", D(0), "Pending"),
-            ("Repair leaking guest bathroom tap", "Maintenance", "stf-9", "Guest Room 2", "High", D(0), "In Progress"),
-            ("Weekly vehicle wash — Land Cruiser", "Vehicles", "stf-6", "Garage", "Medium", D(0), "Pending"),
-            ("Change linen — all guest rooms", "Housekeeping", "stf-5", "Guest Rooms", "Medium", D(-1), "Overdue"),
         ]
         for title, category, assignee, location, priority, due, status in task_defs:
             task = Task(title=title, category=category, assignee_id=staff[assignee].id,
@@ -529,9 +524,6 @@ async def seed() -> None:
             db.add(task)
             await db.flush()
             db.add(TaskChecklistItem(task_id=task.id, text="Complete task", done=status in ("Completed", "Verified")))
-
-        db.add(TaskTemplate(title="Master bedroom clean", category="Housekeeping", recurrence="Daily",
-                             items=["Dusting", "Vacuuming", "Mopping", "Change linen"]))
 
         db.add(GardenTask(title="Irrigation system check", zone="Front Garden", frequency="Weekly",
                            last_done=D(-2), next_due=D(5), assignee_id=staff["stf-8"].id))

@@ -4,7 +4,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useCreate, useList, useUpdate } from "../api/hooks";
 import { Badge, Button, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th } from "../components/ui";
-import type { FoodInventoryItem, InventoryItem, ItemMasterEntry, PurchaseRequest, StockCountDetail, StockCountSummary, Supplier, UnitOfMeasureEntry } from "../types";
+import { fmtDate } from "../lib/date";
+import type { FoodInventoryItem, InventoryItem, ItemMasterEntry, ItemMasterTransaction, PurchaseRequest, StockCountDetail, StockCountSummary, Supplier, UnitOfMeasureEntry } from "../types";
 
 // Unified view over general (Inventory) and food (FoodInventory) stock rows
 // for the Stock tab — the two tables have different shapes (stock/qty,
@@ -306,8 +307,16 @@ function EditItemMasterModal({
     onClose();
   }
 
+  const { data: transactions } = useList<ItemMasterTransaction>(
+    `item-master-transactions-${item.id}`, `/item-master/${item.id}/transactions`
+  );
+
   return (
     <Modal title={`Edit ${item.name}`} onClose={onClose}>
+      <p className="mb-3 text-[12px]" style={{ color: "var(--ink-400)" }}>
+        Created {new Date(item.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+        {item.created_by_name ? ` by ${item.created_by_name}` : ""} · code {item.code}
+      </p>
       <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3">
         <Field label="Item name" required value={form.name} onChange={(v) => setForm((s) => ({ ...s, name: v }))} />
         <label className="flex flex-col gap-1 text-[13px] font-medium">Category
@@ -342,6 +351,29 @@ function EditItemMasterModal({
           </Button>
         </div>
       </form>
+
+      <div className="mt-5 border-t pt-4" style={{ borderColor: "var(--border)" }}>
+        <h4 className="mb-2 text-[13px] font-semibold">Related transactions</h4>
+        {!transactions || transactions.length === 0 ? (
+          <p className="text-[12px]" style={{ color: "var(--ink-400)" }}>No purchase requests, orders or receipts reference this item yet.</p>
+        ) : (
+          <Table>
+            <thead><tr><Th>Type</Th><Th>Code</Th><Th>Date</Th><Th>Status</Th><Th>Qty</Th><Th>Amount</Th></tr></thead>
+            <tbody>
+              {transactions.map((t, i) => (
+                <tr key={`${t.doc_type}-${t.code}-${i}`}>
+                  <Td>{t.doc_type}</Td>
+                  <Td className="font-medium">{t.code}</Td>
+                  <Td>{fmtDate(t.date)}</Td>
+                  <Td>{t.status}</Td>
+                  <Td>{t.qty} {t.unit}</Td>
+                  <Td>KWD {t.amount.toFixed(2)}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </div>
     </Modal>
   );
 }
