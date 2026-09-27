@@ -7,18 +7,17 @@ from app.models.family_guests import Event, FamilyMember, Guest
 from app.models.finance import Document, Expense
 from app.models.kitchen import FoodInventory, MealCategory, WasteReason
 from app.models.people import Attendance, LeaveRequest, Shift, ShiftPattern
-from app.models.purchasing import Inventory, ItemMaster, Supplier, UnitOfMeasure
+from app.models.purchasing import CreditNote, Inventory, Supplier, UnitOfMeasure
 from app.models.tasks import GardenTask, PoolLog, TaskCategory, TaskTemplate
 
 routers = [
     make_router(Area, prefix="/areas", tag="housekeeping", module="housekeeping", order_by="name"),
     make_router(AreaType, prefix="/area-types", tag="housekeeping", module="housekeeping", order_by="label"),
     make_router(Supplier, prefix="/suppliers", tag="purchasing", module="purchasing", order_by="name"),
-    make_router(
-        ItemMaster, prefix="/item-master", tag="purchasing", module="purchasing", order_by="name",
-        read_only=True,  # write endpoints are hand-written in purchasing.py so
-        # `code` is always server-generated, never taken from the client
-    ),
+    make_router(CreditNote, prefix="/credit-notes", tag="purchasing", module="purchasing", order_by="date"),
+    # ItemMaster has no generic registration — every route (GET/POST/PATCH)
+    # is hand-written in purchasing.py, since GET needs to join to Stock for
+    # category/avg_price and POST/PATCH need server-generated `code`.
     make_router(UnitOfMeasure, prefix="/units-of-measure", tag="purchasing", module="purchasing", order_by="label"),
     make_router(Inventory, prefix="/inventory", tag="inventory", module="inventory", order_by="name"),
     make_router(

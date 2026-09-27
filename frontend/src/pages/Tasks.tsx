@@ -5,18 +5,23 @@ import { api } from "../api/client";
 import { useCreate, useList } from "../api/hooks";
 import { useAuth } from "../auth/AuthContext";
 import { AttachmentsPanel } from "../components/AttachmentsPanel";
-import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, statusTone } from "../components/ui";
+import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, statusTone, Table, Td, Th } from "../components/ui";
 import { todayIso } from "../lib/date";
 import type { Area, StaffMember, TaskCategory, TaskItem } from "../types";
 
-interface TaskTemplate { id: string; title: string; category: string; recurrence: string; recurrence_interval_days: number | null; items: string[] }
+interface TemplateItem { text: string; start_time: string | null; end_time: string | null }
+interface TaskTemplate {
+  id: string; title: string; category: string; recurrence: string; recurrence_interval_days: number | null; items: TemplateItem[];
+  requires_verification: boolean;
+}
 
 const STATUSES = ["Pending", "In Progress", "Completed", "Verified", "Overdue"];
-const TABS = ["Board", "Templates"] as const;
+const TABS = ["Board", "Templates", "Productivity"] as const;
 
 interface NewTaskInitial {
   title?: string; category?: string; assignee_id?: string;
-  recurrence?: string; recurrence_interval_days?: number; checklist?: string[];
+  recurrence?: string; recurrence_interval_days?: number; checklist?: TemplateItem[];
+  requires_verification?: boolean;
 }
 
 export function Tasks() {
@@ -31,24 +36,41 @@ export function Tasks() {
         subtitle="Centralized task management across every module — assign, track and verify."
         action={
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setTab(tab === "Templates" ? "Board" : "Templates")}>
-              {tab === "Templates" ? "Board" : "Templates"}
-            </Button>
             {tab === "Templates" && <Button variant="secondary" onClick={() => setTemplateModal("add")}>+ Add Template</Button>}
             <Button onClick={() => setNewTaskFrom({})}>+ New Task</Button>
           </div>
         }
       />
 
-      {tab === "Board" ? <BoardView /> : (
+      <div className="mb-4 flex flex-wrap gap-1 rounded-xl p-1" style={{ background: "var(--surface-sunken)", width: "fit-content" }}>
+        {TABS.map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className="rounded-lg px-3.5 py-1.5 text-[13px] font-semibold"
+            style={{
+              background: tab === t ? "var(--surface)" : "transparent",
+              color: tab === t ? "var(--ink-900)" : "var(--ink-500)",
+              boxShadow: tab === t ? "var(--shadow-sm)" : "none",
+            }}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {tab === "Board" && <BoardView />}
+      {tab === "Templates" && (
         <TemplatesView
           onUse={(t) => setNewTaskFrom({
             title: t.title, category: t.category, recurrence: t.recurrence,
             recurrence_interval_days: t.recurrence_interval_days ?? undefined,
             checklist: t.items,
+            requires_verification: t.requires_verification,
           })}
         />
       )}
+      {tab === "Productivity" && <ProductivityTab />}
 
       {newTaskFrom && <NewTaskModal initial={newTaskFrom} onClose={() => setNewTaskFrom(null)} />}
       {templateModal === "add" && <TemplateModal onClose={() => setTemplateModal(null)} />}
@@ -133,18 +155,25 @@ function BoardView() {
                 <Badge tone={statusTone(status)}>{items.length}</Badge>
               </div>
               <div className="flex flex-col gap-2">
-                {items.map((t) => (
-                  <Card key={t.id} className="!p-3 cursor-pointer" >
-                    <div onClick={() => setDetail(t)}>
-                      <div className="text-[13px] font-semibold">{t.title}</div>
-                      <div className="mt-1 flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--ink-400)" }}>
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: t.priority === "High" ? "var(--status-critical)" : t.priority === "Low" ? "var(--status-good)" : "var(--status-warning)" }} />
-                        {t.priority} · {t.due_date}{t.start_time && t.end_time ? ` · ${t.start_time.slice(0, 5)}–${t.end_time.slice(0, 5)}` : ""}
+                {items.map((t) => {
+                  const timed = t.checklist.filter((c) => c.start_time && c.end_time);
+                  const span = timed.length
+                    ? `${timed.reduce((min, c) => (c.start_time! < min ? c.start_time! : min), timed[0].start_time!).slice(0, 5)}–`
+                      + `${timed.reduce((max, c) => (c.end_time! > max ? c.end_time! : max), timed[0].end_time!).slice(0, 5)}`
+                    : "";
+                  return (
+                    <Card key={t.id} className="!p-3 cursor-pointer" >
+                      <div onClick={() => setDetail(t)}>
+                        <div className="text-[13px] font-semibold">{t.title}</div>
+                        <div className="mt-1 flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--ink-400)" }}>
+                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: t.priority === "High" ? "var(--status-critical)" : t.priority === "Low" ? "var(--status-good)" : "var(--status-warning)" }} />
+                          {t.priority} · {t.due_date}{span && ` · ${span}`}
+                        </div>
+                        <div className="mt-1.5 text-[11.5px]" style={{ color: "var(--ink-400)" }}>{staffName(t.assignee_id).split(" ")[0]}</div>
                       </div>
-                      <div className="mt-1.5 text-[11.5px]" style={{ color: "var(--ink-400)" }}>{staffName(t.assignee_id).split(" ")[0]}</div>
-                    </div>
-                  </Card>
-                ))}
+                    </Card>
+                  );
+                })}
                 {items.length === 0 && <div className="px-1 text-[11.5px]" style={{ color: "var(--ink-300)" }}>None</div>}
               </div>
             </div>
@@ -170,10 +199,7 @@ function BoardView() {
               <InfoRow label="Priority" value={detail.priority} />
               <InfoRow label="Recurrence" value={detail.recurrence} />
               <InfoRow label="Assigned to" value={staffName(detail.assignee_id)} />
-              <InfoRow label="Due" value={`${detail.due_date}${detail.due_time ? " " + detail.due_time : ""}`} />
-              {detail.start_time && detail.end_time && (
-                <InfoRow label="Scheduled slot" value={`${detail.start_time.slice(0, 5)} – ${detail.end_time.slice(0, 5)}`} />
-              )}
+              <InfoRow label="Due" value={detail.due_date} />
               <InfoRow label="Verified" value={detail.verified ? "Yes" : "No"} />
             </div>
 
@@ -189,6 +215,9 @@ function BoardView() {
                     <label key={c.id} className="flex items-center gap-2">
                       <input type="checkbox" checked={c.done} onChange={(e) => toggleItem.mutate({ taskId: detail.id, itemId: c.id, done: e.target.checked })} />
                       <span style={{ textDecoration: c.done ? "line-through" : "none", color: c.done ? "var(--ink-400)" : "var(--ink-900)" }}>{c.text}</span>
+                      {c.start_time && c.end_time && (
+                        <span className="text-[11px]" style={{ color: "var(--ink-400)" }}>{c.start_time.slice(0, 5)}–{c.end_time.slice(0, 5)}</span>
+                      )}
                     </label>
                   ))}
                 </div>
@@ -277,7 +306,11 @@ function TemplatesView({ onUse }: { onUse: (t: TaskTemplate) => void }) {
             <div className="flex flex-col gap-1">
               {t.items.map((item, i) => (
                 <div key={i} className="flex items-center gap-2 text-[12.5px]" style={{ color: "var(--ink-700)" }}>
-                  <span className="h-1 w-1 rounded-full" style={{ background: "var(--ink-300)" }} />{item}
+                  <span className="h-1 w-1 rounded-full" style={{ background: "var(--ink-300)" }} />
+                  {item.text}
+                  {item.start_time && item.end_time && (
+                    <span className="text-[11px]" style={{ color: "var(--ink-400)" }}>{item.start_time.slice(0, 5)}–{item.end_time.slice(0, 5)}</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -300,6 +333,59 @@ function TemplatesView({ onUse }: { onUse: (t: TaskTemplate) => void }) {
   );
 }
 
+function ProductivityTab() {
+  const { data: tasks, isLoading } = useList<TaskItem>("tasks", "/tasks");
+  const { data: staff } = useList<StaffMember>("staff", "/people/staff");
+
+  if (isLoading) return <Spinner />;
+  if (!tasks || tasks.length === 0) return <EmptyState label="No tasks logged yet." />;
+
+  const byStaff = new Map<string, { total: number; done: number; verified: number }>();
+  for (const t of tasks) {
+    if (!t.assignee_id) continue;
+    const row = byStaff.get(t.assignee_id) ?? { total: 0, done: 0, verified: 0 };
+    row.total += 1;
+    if (t.status === "Completed" || t.status === "Verified") row.done += 1;
+    if (t.status === "Verified") row.verified += 1;
+    byStaff.set(t.assignee_id, row);
+  }
+  const rows = Array.from(byStaff.entries())
+    .map(([staffId, r]) => ({
+      staffId, name: staff?.find((s) => s.id === staffId)?.name ?? "Unknown",
+      ...r, rate: r.total ? Math.round((r.done / r.total) * 100) : 0,
+    }))
+    .sort((a, b) => b.done - a.done);
+
+  return (
+    <div>
+      <p className="mb-3 text-[13px]" style={{ color: "var(--ink-500)" }}>
+        Tasks each staff member has finished — a task counts as Done once its status reaches Completed or Verified.
+      </p>
+      <Table>
+        <thead><tr><Th>Staff</Th><Th>Assigned</Th><Th>Done</Th><Th>Verified</Th><Th>Completion Rate</Th></tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.staffId}>
+              <Td className="font-medium">{r.name}</Td>
+              <Td>{r.total}</Td>
+              <Td>{r.done}</Td>
+              <Td>{r.verified}</Td>
+              <Td>
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 w-24 rounded-full" style={{ background: "var(--surface-sunken)" }}>
+                    <div className="h-1.5 rounded-full" style={{ width: `${r.rate}%`, background: "var(--status-good)" }} />
+                  </div>
+                  {r.rate}%
+                </div>
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </div>
+  );
+}
+
 function TemplateModal({ template, onClose }: { template?: TaskTemplate; onClose: () => void }) {
   const qc = useQueryClient();
   const { data: taskCategoriesRaw } = useList<TaskCategory>("task-categories", "/task-categories");
@@ -309,8 +395,12 @@ function TemplateModal({ template, onClose }: { template?: TaskTemplate; onClose
     category: template?.category ?? "",
     recurrence: template?.recurrence ?? "One-time",
     recurrence_interval_days: template?.recurrence_interval_days ?? 7,
-    items: template?.items && template.items.length > 0 ? template.items : [""],
+    items: template?.items && template.items.length > 0
+      ? template.items.map((i) => ({ text: i.text, start_time: i.start_time ?? "", end_time: i.end_time ?? "" }))
+      : [{ text: "", start_time: "", end_time: "" }],
+    requires_verification: template?.requires_verification ?? true,
   });
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!template && taskCategories.length > 0 && !form.category) {
@@ -325,26 +415,41 @@ function TemplateModal({ template, onClose }: { template?: TaskTemplate; onClose
         category: form.category,
         recurrence: form.recurrence,
         recurrence_interval_days: form.recurrence === "Custom" ? form.recurrence_interval_days : null,
-        items: form.items.map((i) => i.trim()).filter(Boolean),
+        items: form.items
+          .filter((i) => i.text.trim())
+          .map((i) => ({ text: i.text.trim(), start_time: i.start_time || null, end_time: i.end_time || null })),
+        requires_verification: form.requires_verification,
       };
       return template ? api.patch(`/task-templates/${template.id}`, payload) : api.post("/task-templates", payload);
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["task-templates"] }); onClose(); },
   });
 
-  function updateItem(i: number, value: string) {
-    setForm((s) => ({ ...s, items: s.items.map((item, idx) => (idx === i ? value : item)) }));
+  function updateItem(i: number, patch: Partial<{ text: string; start_time: string; end_time: string }>) {
+    setForm((s) => ({ ...s, items: s.items.map((item, idx) => (idx === i ? { ...item, ...patch } : item)) }));
   }
   function addItem() {
-    setForm((s) => ({ ...s, items: [...s.items, ""] }));
+    setForm((s) => ({ ...s, items: [...s.items, { text: "", start_time: "", end_time: "" }] }));
   }
   function removeItem(i: number) {
     setForm((s) => ({ ...s, items: s.items.filter((_, idx) => idx !== i) }));
   }
 
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    for (const item of form.items) {
+      if (item.start_time && item.end_time && item.start_time >= item.end_time) {
+        setError(`'${item.text || "Untitled item"}': end time must be after start time.`);
+        return;
+      }
+    }
+    save.mutate();
+  }
+
   return (
-    <Modal title={template ? "Edit template" : "Add template"} onClose={onClose}>
-      <form onSubmit={(e) => { e.preventDefault(); save.mutate(); }} className="flex flex-col gap-3">
+    <Modal title={template ? "Edit template" : "Add template"} onClose={onClose} wide>
+      <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-[13px] font-medium">Template title
           <input required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
             value={form.title} onChange={(e) => setForm((s) => ({ ...s, title: e.target.value }))} />
@@ -372,19 +477,36 @@ function TemplateModal({ template, onClose }: { template?: TaskTemplate; onClose
             </label>
           )}
         </div>
+        <label className="flex items-center gap-2 text-[13px] font-medium">
+          <input type="checkbox" checked={form.requires_verification}
+            onChange={(e) => setForm((s) => ({ ...s, requires_verification: e.target.checked }))} />
+          Tasks from this template require supervisor verification
+        </label>
         <div>
           <div className="mb-1.5 text-[13px] font-medium">Checklist items</div>
+          <p className="mb-1.5 text-[12px]" style={{ color: "var(--ink-400)" }}>
+            Start / end time are optional per item — set both to block out a scheduled slot for that specific activity.
+          </p>
           <div className="flex flex-col gap-1.5">
             {form.items.map((item, i) => (
               <div key={i} className="flex items-center gap-2">
                 <input placeholder="e.g. Wipe down surfaces" className="flex-1 rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                  value={item} onChange={(e) => updateItem(i, e.target.value)} />
-                <button type="button" onClick={() => removeItem(i)} className="flex h-7 w-7 items-center justify-center rounded-full text-[13px]" style={{ color: "var(--status-critical)" }}>×</button>
+                  value={item.text} onChange={(e) => updateItem(i, { text: e.target.value })} />
+                <input type="time" className="w-32 rounded-lg border px-2 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                  value={item.start_time} onChange={(e) => updateItem(i, { start_time: e.target.value })} />
+                <input type="time" className="w-32 rounded-lg border px-2 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                  value={item.end_time} onChange={(e) => updateItem(i, { end_time: e.target.value })} />
+                <button type="button" onClick={() => removeItem(i)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px]" style={{ color: "var(--status-critical)" }}>×</button>
               </div>
             ))}
           </div>
           <Button type="button" variant="ghost" className="mt-1.5" onClick={addItem}>+ Add checklist item</Button>
         </div>
+        {error && (
+          <div className="rounded-lg px-3 py-2 text-[12.5px]" style={{ background: "var(--status-critical-bg)", color: "var(--status-critical)" }}>
+            {error}
+          </div>
+        )}
         <Button type="submit" disabled={save.isPending || !form.title.trim() || !form.category}>
           {save.isPending ? "Saving..." : template ? "Save changes" : "Create Template"}
         </Button>
@@ -402,11 +524,15 @@ export function NewTaskModal({ initial, onClose }: { initial: NewTaskInitial; on
   const taskCategories = [...(taskCategoriesRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
   const [form, setForm] = useState({
     title: initial.title ?? "", category: initial.category ?? "", description: "", assignee_id: initial.assignee_id ?? "", location_id: "",
-    priority: "Medium", due_date: todayIso(), due_time: "", start_time: "", end_time: "", recurrence: initial.recurrence ?? "One-time",
+    priority: "Medium", due_date: todayIso(),
+    recurrence: initial.recurrence ?? "One-time",
     recurrence_interval_days: initial.recurrence_interval_days ?? 7,
+    requires_verification: initial.requires_verification ?? true,
   });
+  const [checklist, setChecklist] = useState(
+    (initial.checklist ?? []).map((c) => ({ text: c.text, start_time: c.start_time ?? "", end_time: c.end_time ?? "" }))
+  );
   const [conflictError, setConflictError] = useState<string | null>(null);
-  const templateChecklist = initial.checklist ?? [];
 
   useEffect(() => {
     if (taskCategories.length > 0 && !form.category) {
@@ -414,12 +540,24 @@ export function NewTaskModal({ initial, onClose }: { initial: NewTaskInitial; on
     }
   }, [taskCategories, form.category]);
 
+  function updateChecklistItem(i: number, patch: Partial<{ text: string; start_time: string; end_time: string }>) {
+    setChecklist((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  }
+  function addChecklistItem() {
+    setChecklist((cs) => [...cs, { text: "", start_time: "", end_time: "" }]);
+  }
+  function removeChecklistItem(i: number) {
+    setChecklist((cs) => cs.filter((_, idx) => idx !== i));
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setConflictError(null);
-    if (form.start_time && form.end_time && form.start_time >= form.end_time) {
-      setConflictError("End time must be after start time.");
-      return;
+    for (const item of checklist) {
+      if (item.start_time && item.end_time && item.start_time >= item.end_time) {
+        setConflictError(`'${item.text || "Untitled item"}': end time must be after start time.`);
+        return;
+      }
     }
     try {
       await create.mutateAsync({
@@ -427,11 +565,10 @@ export function NewTaskModal({ initial, onClose }: { initial: NewTaskInitial; on
         description: form.description || null,
         assignee_id: form.assignee_id || null,
         location_id: form.location_id || null,
-        due_time: form.due_time || null,
-        start_time: form.start_time || null,
-        end_time: form.end_time || null,
         recurrence_interval_days: form.recurrence === "Custom" ? form.recurrence_interval_days : null,
-        checklist: templateChecklist.map((text) => ({ text, done: false })),
+        checklist: checklist
+          .filter((c) => c.text.trim())
+          .map((c) => ({ text: c.text.trim(), done: false, start_time: c.start_time || null, end_time: c.end_time || null })),
       } as never);
       qc.invalidateQueries({ queryKey: ["areas"] });
       qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
@@ -443,7 +580,7 @@ export function NewTaskModal({ initial, onClose }: { initial: NewTaskInitial; on
   }
 
   return (
-    <Modal title="New task" onClose={onClose}>
+    <Modal title="New task" onClose={onClose} wide>
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-[13px] font-medium">Task title
           <input required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
@@ -483,18 +620,6 @@ export function NewTaskModal({ initial, onClose }: { initial: NewTaskInitial; on
             <input type="date" required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
               value={form.due_date} onChange={(e) => setForm((s) => ({ ...s, due_date: e.target.value }))} />
           </label>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Due time
-            <input type="time" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={form.due_time} onChange={(e) => setForm((s) => ({ ...s, due_time: e.target.value }))} />
-          </label>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Start time
-            <input type="time" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={form.start_time} onChange={(e) => setForm((s) => ({ ...s, start_time: e.target.value }))} />
-          </label>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">End time
-            <input type="time" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={form.end_time} onChange={(e) => setForm((s) => ({ ...s, end_time: e.target.value }))} />
-          </label>
           <label className="flex flex-col gap-1 text-[13px] font-medium">Recurrence
             <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
               value={form.recurrence} onChange={(e) => setForm((s) => ({ ...s, recurrence: e.target.value }))}>
@@ -508,24 +633,46 @@ export function NewTaskModal({ initial, onClose }: { initial: NewTaskInitial; on
             </label>
           )}
         </div>
+        <label className="flex items-center gap-2 text-[13px] font-medium">
+          <input type="checkbox" checked={form.requires_verification}
+            onChange={(e) => setForm((s) => ({ ...s, requires_verification: e.target.checked }))} />
+          Requires supervisor verification
+        </label>
+        {!form.requires_verification && (
+          <p className="text-[12px]" style={{ color: "var(--ink-400)" }}>
+            Marking this task Completed is final — it skips the Approvals review step.
+          </p>
+        )}
         {form.recurrence !== "One-time" && (
           <p className="text-[12px]" style={{ color: "var(--ink-400)" }}>
             Once this task is fully verified, the next occurrence is created automatically on its next due date.
           </p>
         )}
-        {templateChecklist.length > 0 && (
-          <div className="rounded-lg p-2.5 text-[12px]" style={{ background: "var(--surface-sunken)", color: "var(--ink-700)" }}>
-            <div className="mb-1 font-semibold" style={{ color: "var(--ink-400)" }}>Checklist from template</div>
-            {templateChecklist.map((item, i) => <div key={i}>• {item}</div>)}
-          </div>
-        )}
         <label className="flex flex-col gap-1 text-[13px] font-medium">Description
           <textarea placeholder="Optional details" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
             value={form.description} onChange={(e) => setForm((s) => ({ ...s, description: e.target.value }))} />
         </label>
-        <p className="text-[12px]" style={{ color: "var(--ink-400)" }}>
-          Start / end time are optional — set both to block out a scheduled slot. The assigned staff member can&rsquo;t be double-booked into an overlapping slot on the same day.
-        </p>
+        <div>
+          <div className="mb-1.5 text-[13px] font-medium">Checklist items</div>
+          <p className="mb-1.5 text-[12px]" style={{ color: "var(--ink-400)" }}>
+            Start / end time are optional per item — set both to block out a scheduled slot for that activity. The
+            assigned staff member can&rsquo;t be double-booked into an overlapping slot on the same day.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {checklist.map((item, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input placeholder="e.g. Wipe down surfaces" className="flex-1 rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                  value={item.text} onChange={(e) => updateChecklistItem(i, { text: e.target.value })} />
+                <input type="time" className="w-32 rounded-lg border px-2 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                  value={item.start_time} onChange={(e) => updateChecklistItem(i, { start_time: e.target.value })} />
+                <input type="time" className="w-32 rounded-lg border px-2 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                  value={item.end_time} onChange={(e) => updateChecklistItem(i, { end_time: e.target.value })} />
+                <button type="button" onClick={() => removeChecklistItem(i)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px]" style={{ color: "var(--status-critical)" }}>×</button>
+              </div>
+            ))}
+          </div>
+          <Button type="button" variant="ghost" className="mt-1.5" onClick={addChecklistItem}>+ Add checklist item</Button>
+        </div>
         {conflictError && (
           <div className="rounded-lg px-3 py-2 text-[12.5px]" style={{ background: "var(--status-critical-bg)", color: "var(--status-critical)" }}>
             {conflictError}

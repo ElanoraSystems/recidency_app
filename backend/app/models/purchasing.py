@@ -41,6 +41,26 @@ class Supplier(Base, UUIDPKMixin, TimestampMixin):
     since: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
 
+class CreditNote(Base, UUIDPKMixin, TimestampMixin):
+    """A supplier-issued credit (return, overcharge, damaged-goods refund,
+    etc.) against a purchase — tracked as its own record, not a rewrite of
+    the original PO/GRN, matching how Odoo's own credit notes sit alongside
+    (never inside) the original purchase/vendor bill. Kept minimal on
+    purpose: this exists so the accounting-side data is there for a later
+    Odoo Purchase/Inventory/Accounting sync, not to build an AP ledger."""
+
+    __tablename__ = "credit_notes"
+
+    supplier_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("suppliers.id", ondelete="CASCADE"))
+    po_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("purchase_orders.id", ondelete="SET NULL"), nullable=True
+    )
+    date: Mapped[date] = mapped_column(Date)
+    reason: Mapped[str] = mapped_column(String(200))
+    amount: Mapped[float] = mapped_column(Numeric(10, 2))
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 class Inventory(Base, UUIDPKMixin, TimestampMixin):
     """General (non-food) inventory: cleaning, linen, toiletries, glassware, etc."""
 
@@ -77,11 +97,34 @@ class ItemMaster(Base, UUIDPKMixin, TimestampMixin):
     preferred_supplier_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True
     )
-    min_stock: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
-    reorder_level: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     stock_type: Mapped[str] = mapped_column(String(10))  # food | general
     stock_id: Mapped[uuid.UUID] = mapped_column()  # points into food_inventory or inventory
+
+
+class StockCount(Base, UUIDPKMixin, TimestampMixin):
+    """A physical stock-take. Lines snapshot each active item's book qty at
+    count start; submitting posts the variance (counted - book) onto the
+    real stock row so it matches what was physically counted."""
+
+    __tablename__ = "stock_counts"
+
+    date: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(20), default="Draft")  # Draft | Submitted
+    counted_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class StockCountLine(Base, UUIDPKMixin):
+    __tablename__ = "stock_count_lines"
+
+    count_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("stock_counts.id", ondelete="CASCADE"))
+    item_master_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("item_master.id", ondelete="CASCADE"))
+    book_qty: Mapped[float] = mapped_column(Numeric(12, 3))
+    counted_qty: Mapped[float | None] = mapped_column(Numeric(12, 3), nullable=True)
+    unit_cost: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
 
 
 class PurchaseRequest(Base, UUIDPKMixin, TimestampMixin):

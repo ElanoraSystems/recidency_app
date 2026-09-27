@@ -1,6 +1,5 @@
 import uuid
-from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -8,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.api.v1.purchasing import _transition_po_to_ordered
-from app.api.v1.tasks import _check_overlap, _recompute_area_completion
+from app.api.v1.tasks import _recompute_area_completion, _spawn_next_occurrence
 from app.crud.activity import log_activity
 from app.db.session import get_db
 from app.models.facilities import Asset, MaintenanceRequest
@@ -19,55 +18,6 @@ from app.models.tasks import Task, TaskChecklistItem, TaskComment
 from app.models.user import User
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
-
-
-def _advance_due_date(due_date: date, recurrence: str, interval_days: int | None) -> date | None:
-    """Where a recurring task's next occurrence lands, or None if this
-    recurrence can't be advanced (One-time, or Custom with no interval set)."""
-    if recurrence == "Daily":
-        return due_date + timedelta(days=1)
-    if recurrence == "Weekly":
-        return due_date + timedelta(days=7)
-    if recurrence == "Monthly":
-        month = due_date.month + 1
-        year = due_date.year + (1 if month > 12 else 0)
-        month = 1 if month > 12 else month
-        day = min(due_date.day, monthrange(year, month)[1])
-        return due_date.replace(year=year, month=month, day=day)
-    if recurrence == "Custom" and interval_days:
-        return due_date + timedelta(days=interval_days)
-    return None
-
-
-async def _spawn_next_occurrence(db: AsyncSession, task: Task, user: User) -> None:
-    next_due = _advance_due_date(task.due_date, task.recurrence, task.recurrence_interval_days)
-    if not next_due:
-        return
-    if task.assignee_id and task.start_time and task.end_time:
-        conflict = await _check_overlap(db, task.assignee_id, next_due, task.start_time, task.end_time)
-        if conflict:
-            await log_activity(
-                db, user, "Skipped next recurring occurrence — schedule conflict",
-                f"{task.title} — would repeat on {next_due}",
-            )
-            return
-    next_task = Task(
-        title=task.title, category=task.category, description=task.description,
-        assignee_id=task.assignee_id, location_id=task.location_id, priority=task.priority,
-        due_date=next_due, due_time=task.due_time, start_time=task.start_time, end_time=task.end_time,
-        recurrence=task.recurrence, recurrence_interval_days=task.recurrence_interval_days,
-        status="Pending",
-    )
-    db.add(next_task)
-    await db.flush()
-    checklist = (
-        await db.execute(select(TaskChecklistItem).where(TaskChecklistItem.task_id == task.id))
-    ).scalars().all()
-    for item in checklist:
-        db.add(TaskChecklistItem(task_id=next_task.id, text=item.text, done=False))
-    if next_task.category == "Housekeeping":
-        await _recompute_area_completion(db, next_task.location_id)
-    await log_activity(db, user, "Created next recurring occurrence", f"{task.title} — due {next_due}")
 
 
 @router.get("")

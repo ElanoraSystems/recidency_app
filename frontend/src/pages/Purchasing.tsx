@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import { useCreate, useList } from "../api/hooks";
+import { useCreate, useList, useUpdate } from "../api/hooks";
 import { Icon } from "../components/icons";
 import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
-import { fmtDate } from "../lib/date";
-import type { InventoryItem, ItemMasterEntry, PurchaseOrder, PurchaseRequest, StaffMember, Supplier, UnitOfMeasureEntry } from "../types";
+import { fmtDate, todayIso } from "../lib/date";
+import type { CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PurchaseOrder, PurchaseRequest, StaffMember, Supplier, UnitOfMeasureEntry } from "../types";
 
 interface GrnLine { id: string; name: string; ordered_qty: number; received_qty: number; unit: string; ordered_price: number; price: number }
 interface Grn { id: string; code: string; po_id: string; supplier_id: string; date: string; received_by_name: string | null; lines: GrnLine[] }
@@ -19,7 +20,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-const TABS = ["Purchase Requests", "Purchase Orders", "Goods Received", "Shopping Basket", "Suppliers"] as const;
+const TABS = ["Purchase Requests", "Purchase Orders", "Goods Received", "Shopping Basket", "Suppliers", "Credit Notes"] as const;
 
 export function Purchasing() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Purchase Requests");
@@ -64,6 +65,7 @@ export function Purchasing() {
       {tab === "Goods Received" && <GoodsReceivedTab />}
       {tab === "Shopping Basket" && <ShoppingBasketTab />}
       {tab === "Suppliers" && <SuppliersTab />}
+      {tab === "Credit Notes" && <CreditNotesTab />}
     </div>
   );
 }
@@ -77,14 +79,12 @@ function RequestsTab() {
       api.post(`/purchasing/purchase-requests/${id}/decision?approve=${approve}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["purchase-requests"] }),
   });
-  const [showForm, setShowForm] = useState(false);
-  const [convertPr, setConvertPr] = useState<PurchaseRequest | null>(null);
   const requesterName = (userId: string | null) => staff?.find((s) => s.user_id === userId)?.name ?? "—";
 
   return (
     <div>
       <div className="mb-4 flex justify-end">
-        <Button onClick={() => setShowForm(true)}>+ New Request</Button>
+        <Link to="/purchasing/requests/new"><Button>+ New Request</Button></Link>
       </div>
 
       {isLoading ? <Spinner /> : !data || data.length === 0 ? <EmptyState label="No purchase requests." /> : (
@@ -108,7 +108,7 @@ function RequestsTab() {
                     </div>
                   )}
                   {pr.status === "Approved" && (
-                    <Button size="sm" variant="secondary" onClick={() => setConvertPr(pr)}>Create PO</Button>
+                    <Link to={`/purchasing/orders/new/${pr.id}`}><Button size="sm" variant="secondary">Create PO</Button></Link>
                   )}
                 </Td>
               </tr>
@@ -116,105 +116,149 @@ function RequestsTab() {
           </tbody>
         </Table>
       )}
-      {showForm && <NewRequestModal onClose={() => setShowForm(false)} />}
-      {convertPr && <ConvertToPoModal pr={convertPr} onClose={() => setConvertPr(null)} />}
     </div>
   );
 }
 
-function NewRequestModal({ onClose }: { onClose: () => void }) {
+interface RequestLine { itemRef: string; item: string; qty: number; unit: string; category: string; urgency: string; est_cost: number }
+
+function newRequestLine(defaultUnit: string): RequestLine {
+  return { itemRef: "", item: "", qty: 1, unit: defaultUnit, category: "", urgency: "Medium", est_cost: 0 };
+}
+
+export function NewPurchaseRequestPage() {
+  const navigate = useNavigate();
   const { data: itemMaster } = useList<ItemMasterEntry>("item-master", "/item-master");
   const { data: uomsRaw } = useList<UnitOfMeasureEntry>("units-of-measure", "/units-of-measure");
   const uoms = [...(uomsRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
   const create = useCreate<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
-  const [itemRef, setItemRef] = useState("");
-  const [form, setForm] = useState({ item: "", qty: 1, unit: "", category: "", urgency: "Medium", est_cost: 0 });
+  const [lines, setLines] = useState<RequestLine[]>([newRequestLine("")]);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (uoms.length > 0 && !form.unit) setForm((s) => ({ ...s, unit: uoms[0].label }));
-  }, [uoms, form.unit]);
+    if (uoms.length === 0) return;
+    setLines((ls) => ls.map((l) => (l.unit ? l : { ...l, unit: uoms[0].label })));
+  }, [uoms]);
 
-  function onPickItem(id: string) {
-    setItemRef(id);
+  function updateLine(i: number, patch: Partial<RequestLine>) {
+    setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+  }
+  function onPickItem(i: number, id: string) {
     const im = itemMaster?.find((x) => x.id === id);
-    if (im) {
-      setForm((s) => ({
-        ...s,
-        item: im.name,
-        unit: im.uom,
-        category: im.stock_type === "food" ? "Kitchen" : "General",
-        est_cost: im.last_price,
-      }));
-    }
+    updateLine(i, {
+      itemRef: id,
+      ...(im ? { item: im.name, unit: im.uom, category: im.stock_type === "food" ? "Kitchen" : "General", est_cost: im.last_price } : {}),
+    });
+  }
+  function addLine() {
+    setLines((ls) => [...ls, newRequestLine(uoms[0]?.label ?? "")]);
+  }
+  function removeLine(i: number) {
+    setLines((ls) => ls.filter((_, idx) => idx !== i));
   }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await create.mutateAsync({ ...form, linked_inventory_id: itemRef || null } as never);
-    onClose();
+    setSubmitting(true);
+    try {
+      for (const line of lines) {
+        await create.mutateAsync({
+          item: line.item, qty: line.qty, unit: line.unit, category: line.category,
+          urgency: line.urgency, est_cost: line.est_cost, linked_inventory_id: line.itemRef || null,
+        } as never);
+      }
+      navigate("/purchasing");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
-    <Modal title="New purchase request" onClose={onClose}>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
-        <label className="flex flex-col gap-1 text-[13px] font-medium">Item (from Item Master)
-          <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-            value={itemRef} onChange={(e) => onPickItem(e.target.value)}>
-            <option value="">— custom item, not in Item Master —</option>
-            {itemMaster?.filter((im) => im.active).map((im) => <option key={im.id} value={im.id}>{im.name}</option>)}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-[13px] font-medium">Item name
-          <input required placeholder="e.g. Coffee Beans" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-            value={form.item} onChange={(e) => setForm((s) => ({ ...s, item: e.target.value }))} />
-        </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Quantity
-            <input type="number" required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={form.qty} onChange={(e) => setForm((s) => ({ ...s, qty: Number(e.target.value) }))} />
-          </label>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Unit
-            <select required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={form.unit} onChange={(e) => setForm((s) => ({ ...s, unit: e.target.value }))}>
-              {form.unit && !uoms.some((u) => u.label === form.unit) && <option value={form.unit}>{form.unit}</option>}
-              {uoms.map((u) => <option key={u.id} value={u.label}>{u.label}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Category
-            <input required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={form.category} onChange={(e) => setForm((s) => ({ ...s, category: e.target.value }))} />
-          </label>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Urgency
-            <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={form.urgency} onChange={(e) => setForm((s) => ({ ...s, urgency: e.target.value }))}>
-              {["Low", "Medium", "High"].map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Estimated cost (KWD)
-            <input type="number" step="0.01" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={form.est_cost} onChange={(e) => setForm((s) => ({ ...s, est_cost: Number(e.target.value) }))} />
-          </label>
-        </div>
-        <Button type="submit" disabled={create.isPending}>{create.isPending ? "Submitting..." : "Submit Request"}</Button>
+    <div>
+      <Link to="/purchasing" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Purchasing</Link>
+      <PageHeader title="New purchase request" subtitle="Each line becomes its own request, approved and ordered independently." />
+      <form onSubmit={onSubmit} className="flex flex-col gap-4 max-w-3xl">
+        {lines.map((line, i) => (
+          <div key={i} className="flex flex-col gap-3 rounded-xl border p-3" style={{ borderColor: "var(--border-strong)" }}>
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--ink-400)" }}>Item {i + 1}</span>
+              {lines.length > 1 && (
+                <button type="button" className="text-xs font-semibold" style={{ color: "var(--status-critical)" }} onClick={() => removeLine(i)}>
+                  Remove
+                </button>
+              )}
+            </div>
+            <label className="flex flex-col gap-1 text-[13px] font-medium">Item (from Item Master)
+              <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                value={line.itemRef} onChange={(e) => onPickItem(i, e.target.value)}>
+                <option value="">— custom item, not in Item Master —</option>
+                {itemMaster?.filter((im) => im.active).map((im) => <option key={im.id} value={im.id}>{im.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-[13px] font-medium">Item name
+              <input required placeholder="e.g. Coffee Beans" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                value={line.item} onChange={(e) => updateLine(i, { item: e.target.value })} />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 text-[13px] font-medium">Quantity
+                <input type="number" required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                  value={line.qty} onChange={(e) => updateLine(i, { qty: Number(e.target.value) })} />
+              </label>
+              <label className="flex flex-col gap-1 text-[13px] font-medium">Unit
+                <select required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                  value={line.unit} onChange={(e) => updateLine(i, { unit: e.target.value })}>
+                  {line.unit && !uoms.some((u) => u.label === line.unit) && <option value={line.unit}>{line.unit}</option>}
+                  {uoms.map((u) => <option key={u.id} value={u.label}>{u.label}</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[13px] font-medium">Category
+                <input required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                  value={line.category} onChange={(e) => updateLine(i, { category: e.target.value })} />
+              </label>
+              <label className="flex flex-col gap-1 text-[13px] font-medium">Urgency
+                <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                  value={line.urgency} onChange={(e) => updateLine(i, { urgency: e.target.value })}>
+                  {["Low", "Medium", "High"].map((u) => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[13px] font-medium">Estimated cost (KWD)
+                <input type="number" step="0.01" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                  value={line.est_cost} onChange={(e) => updateLine(i, { est_cost: Number(e.target.value) })} />
+              </label>
+            </div>
+          </div>
+        ))}
+        <Button type="button" variant="secondary" onClick={addLine}>+ Add another item</Button>
+        <Button type="submit" disabled={submitting}>
+          {submitting ? "Submitting..." : `Submit ${lines.length} Request${lines.length > 1 ? "s" : ""}`}
+        </Button>
       </form>
-    </Modal>
+    </div>
   );
 }
 
-function ConvertToPoModal({ pr, onClose }: { pr: PurchaseRequest; onClose: () => void }) {
+export function NewPurchaseOrderPage() {
+  const { prId } = useParams<{ prId: string }>();
+  const navigate = useNavigate();
   const qc = useQueryClient();
+  const { data: requests, isLoading } = useList<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
   const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
-  const [form, setForm] = useState({ supplier_id: "", price: pr.est_cost / pr.qty || 0, expected_date: "" });
+  const pr = requests?.find((r) => r.id === prId);
+  const [form, setForm] = useState({ supplier_id: "", price: 0, expected_date: "" });
+
+  useEffect(() => {
+    if (pr) setForm((s) => ({ ...s, price: pr.est_cost / pr.qty || 0 }));
+  }, [pr]);
 
   const convert = useMutation({
     mutationFn: async () =>
-      api.post(`/purchasing/purchase-requests/${pr.id}/convert-to-po`, {
+      api.post(`/purchasing/purchase-requests/${prId}/convert-to-po`, {
         supplier_id: form.supplier_id, price: form.price, expected_date: form.expected_date || null,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["purchase-requests"] });
       qc.invalidateQueries({ queryKey: ["purchase-orders"] });
-      onClose();
+      navigate("/purchasing");
     },
   });
 
@@ -224,9 +268,14 @@ function ConvertToPoModal({ pr, onClose }: { pr: PurchaseRequest; onClose: () =>
     await convert.mutateAsync();
   }
 
+  if (isLoading) return <Spinner />;
+  if (!pr) return <EmptyState label="Purchase request not found." />;
+
   return (
-    <Modal title={`Create purchase order — ${pr.item}`} onClose={onClose}>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+    <div>
+      <Link to="/purchasing" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Purchasing</Link>
+      <PageHeader title={`Create purchase order — ${pr.item}`} />
+      <form onSubmit={onSubmit} className="flex flex-col gap-3 max-w-xl">
         <div className="text-[13px]" style={{ color: "var(--ink-500)" }}>{pr.qty} {pr.unit} · {pr.category}</div>
         <label className="flex flex-col gap-1 text-[13px] font-medium">Supplier
           <select required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
@@ -248,7 +297,7 @@ function ConvertToPoModal({ pr, onClose }: { pr: PurchaseRequest; onClose: () =>
         </div>
         <Button type="submit" disabled={convert.isPending}>{convert.isPending ? "Creating..." : "Create Purchase Order"}</Button>
       </form>
-    </Modal>
+    </div>
   );
 }
 
@@ -257,7 +306,6 @@ function OrdersTab() {
   const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
   const qc = useQueryClient();
   const [detail, setDetail] = useState<PurchaseOrder | null>(null);
-  const [receiving, setReceiving] = useState<PurchaseOrder | null>(null);
   const decide = useMutation({
     mutationFn: async ({ id, approve }: { id: string; approve: boolean }) =>
       api.post(`/purchasing/purchase-orders/${id}/decision?approve=${approve}`),
@@ -304,7 +352,7 @@ function OrdersTab() {
                     </div>
                   )}
                   {(po.status === "Ordered" || po.status === "Partially Received") && (
-                    <Button size="sm" variant="secondary" onClick={() => setReceiving(po)}>Receive</Button>
+                    <Link to={`/purchasing/grn/${po.id}`}><Button size="sm" variant="secondary">Receive</Button></Link>
                   )}
                 </Td>
               </tr>
@@ -346,42 +394,58 @@ function OrdersTab() {
                 <Button onClick={() => decide.mutate({ id: detail.id, approve: true })} disabled={decide.isPending}>Approve Order</Button>
               )}
               {(detail.status === "Ordered" || detail.status === "Partially Received") && (
-                <Button onClick={() => { setReceiving(detail); setDetail(null); }}>Receive Goods (GRN)</Button>
+                <Link to={`/purchasing/grn/${detail.id}`}><Button>Receive Goods (GRN)</Button></Link>
               )}
             </div>
           </div>
         </Modal>
       )}
-
-      {receiving && <ReceiveGoodsModal po={receiving} onClose={() => setReceiving(null)} />}
     </div>
   );
 }
 
-function ReceiveGoodsModal({ po, onClose }: { po: PurchaseOrder; onClose: () => void }) {
+export function ReceiveGoodsPage() {
+  const { poId } = useParams<{ poId: string }>();
+  const navigate = useNavigate();
   const qc = useQueryClient();
+  const { data: orders, isLoading } = useList<PurchaseOrder>("purchase-orders", "/purchasing/purchase-orders");
   const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
-  const supplierName = suppliers?.find((s) => s.id === po.supplier_id)?.name ?? "—";
-  const pending = po.lines.filter((l) => l.received_qty < l.qty);
-  const [qtys, setQtys] = useState<Record<string, number>>(
-    Object.fromEntries(pending.map((l) => [l.id, l.qty - l.received_qty]))
-  );
+  const { data: itemMaster } = useList<ItemMasterEntry>("item-master", "/item-master");
+  const po = orders?.find((o) => o.id === poId);
+  const supplierName = suppliers?.find((s) => s.id === po?.supplier_id)?.name ?? "—";
+  const pending = po?.lines.filter((l) => l.received_qty < l.qty) ?? [];
+  const [qtys, setQtys] = useState<Record<string, number>>({});
   // Defaults to each line's ordered price — leave untouched for "received
   // exactly as ordered", or adjust if the actual invoice came in different.
-  const [prices, setPrices] = useState<Record<string, number>>(
-    Object.fromEntries(pending.map((l) => [l.id, l.price]))
-  );
+  const [prices, setPrices] = useState<Record<string, number>>({});
+  // Food lines only — creates a new FEFO batch lot instead of blending into
+  // one stock figure; optional, left blank means "no batch tracking for this receipt".
+  const [expiries, setExpiries] = useState<Record<string, string>>({});
+  const [batchLabels, setBatchLabels] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!po || Object.keys(qtys).length > 0) return;
+    setQtys(Object.fromEntries(pending.map((l) => [l.id, l.qty - l.received_qty])));
+    setPrices(Object.fromEntries(pending.map((l) => [l.id, l.price])));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [po]);
+
+  function isFoodLine(l: PoLine): boolean {
+    return itemMaster?.find((im) => im.id === l.item_master_id)?.stock_type === "food";
+  }
 
   const receive = useMutation({
     mutationFn: async () =>
       api.post("/purchasing/grns", {
-        po_id: po.id,
+        po_id: poId,
         lines: pending
           .filter((l) => (qtys[l.id] ?? 0) > 0)
           .map((l) => ({
             po_line_id: l.id,
             received_qty: Math.min(qtys[l.id] ?? 0, l.qty - l.received_qty),
             actual_price: prices[l.id] ?? l.price,
+            expiry: isFoodLine(l) ? (expiries[l.id] || null) : null,
+            batch_label: isFoodLine(l) ? (batchLabels[l.id] || null) : null,
           })),
       }),
     onSuccess: () => {
@@ -390,12 +454,17 @@ function ReceiveGoodsModal({ po, onClose }: { po: PurchaseOrder; onClose: () => 
       qc.invalidateQueries({ queryKey: ["inventory"] });
       qc.invalidateQueries({ queryKey: ["food-inventory"] });
       qc.invalidateQueries({ queryKey: ["expenses"] });
-      onClose();
+      navigate("/purchasing");
     },
   });
 
+  if (isLoading) return <Spinner />;
+  if (!po) return <EmptyState label="Purchase order not found." />;
+
   return (
-    <Modal title={`Receive goods — ${po.code}`} onClose={onClose} wide>
+    <div>
+      <Link to="/purchasing" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Purchasing</Link>
+      <PageHeader title={`Receive goods — ${po.code}`} />
       <div className="flex flex-col gap-3 text-[13px]">
         <div className="flex items-center gap-2">
           <Badge>{supplierName}</Badge>
@@ -405,11 +474,12 @@ function ReceiveGoodsModal({ po, onClose }: { po: PurchaseOrder; onClose: () => 
           </span>
         </div>
         <Table>
-          <thead><tr><Th>Item</Th><Th>Ordered</Th><Th>Already received</Th><Th>Pending</Th><Th>Receiving now</Th><Th>Actual price</Th></tr></thead>
+          <thead><tr><Th>Item</Th><Th>Ordered</Th><Th>Already received</Th><Th>Pending</Th><Th>Receiving now</Th><Th>Actual price</Th><Th>Expiry</Th><Th>Batch</Th></tr></thead>
           <tbody>
             {pending.map((l) => {
               const pendingQty = l.qty - l.received_qty;
               const adjusted = (prices[l.id] ?? l.price) !== l.price;
+              const food = isFoodLine(l);
               return (
                 <tr key={l.id}>
                   <Td className="font-medium">{l.name}</Td>
@@ -437,6 +507,28 @@ function ReceiveGoodsModal({ po, onClose }: { po: PurchaseOrder; onClose: () => 
                       {adjusted && <Badge tone="warning">was KWD {l.price.toFixed(3)}</Badge>}
                     </div>
                   </Td>
+                  <Td>
+                    {food ? (
+                      <input
+                        type="date"
+                        className="w-36 rounded-lg border px-2 py-1 text-sm"
+                        style={{ borderColor: "var(--border-strong)" }}
+                        value={expiries[l.id] ?? ""}
+                        onChange={(e) => setExpiries((s) => ({ ...s, [l.id]: e.target.value }))}
+                      />
+                    ) : "—"}
+                  </Td>
+                  <Td>
+                    {food ? (
+                      <input
+                        type="text" placeholder="Optional"
+                        className="w-24 rounded-lg border px-2 py-1 text-sm"
+                        style={{ borderColor: "var(--border-strong)" }}
+                        value={batchLabels[l.id] ?? ""}
+                        onChange={(e) => setBatchLabels((s) => ({ ...s, [l.id]: e.target.value }))}
+                      />
+                    ) : "—"}
+                  </Td>
                 </tr>
               );
             })}
@@ -446,7 +538,7 @@ function ReceiveGoodsModal({ po, onClose }: { po: PurchaseOrder; onClose: () => 
           {receive.isPending ? "Posting..." : "Post Goods Receipt"}
         </Button>
       </div>
-    </Modal>
+    </div>
   );
 }
 
@@ -520,39 +612,61 @@ function GoodsReceivedTab() {
   );
 }
 
-interface BasketLine { itemId: string; name: string; qty: number; unit: string; category: string; estCost: number }
+interface BasketLine { itemMasterId: string; name: string; qty: number; unit: string; category: string; estCost: number }
 
 function ShoppingBasketTab() {
-  const { data: inventory, isLoading } = useList<InventoryItem>("inventory", "/inventory");
-  const { data: itemMaster } = useList<ItemMasterEntry>("item-master", "/item-master");
+  const { data: itemMaster, isLoading } = useList<ItemMasterEntry>("item-master", "/item-master");
+  const { data: foodInventory } = useList<FoodInventoryItem>("food-inventory", "/kitchen/food-inventory");
+  const { data: inventory } = useList<InventoryItem>("inventory", "/inventory");
   const [basket, setBasket] = useState<BasketLine[]>([]);
   const create = useCreate<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
   const [submitting, setSubmitting] = useState(false);
 
-  const lowStock = inventory?.filter((i) => i.stock < i.min) ?? [];
-
-  function addToBasket(item: InventoryItem) {
-    if (basket.some((b) => b.itemId === item.id)) return;
-    const qty = Math.max(item.max - item.stock, 1);
-    setBasket((b) => [...b, { itemId: item.id, name: item.name, qty, unit: item.unit, category: item.category, estCost: qty * item.last_price }]);
+  // Par level (min/max) and current qty both live on whichever stock table
+  // stock_type points at — food_inventory or inventory — not on Item Master.
+  function stockRecord(im: ItemMasterEntry): FoodInventoryItem | InventoryItem | undefined {
+    return im.stock_type === "food"
+      ? foodInventory?.find((f) => f.id === im.stock_id)
+      : inventory?.find((i) => i.id === im.stock_id);
+  }
+  function currentStock(im: ItemMasterEntry): number {
+    const rec = stockRecord(im);
+    if (!rec) return 0;
+    return "qty" in rec ? rec.qty : rec.stock;
   }
 
-  function removeFromBasket(itemId: string) {
-    setBasket((b) => b.filter((x) => x.itemId !== itemId));
+  const lowStock = (itemMaster ?? []).filter((im) => {
+    const rec = stockRecord(im);
+    return im.active && !!rec && rec.min > 0 && currentStock(im) < rec.min;
+  });
+
+  function addToBasket(im: ItemMasterEntry) {
+    if (basket.some((b) => b.itemMasterId === im.id)) return;
+    const rec = stockRecord(im);
+    const stock = currentStock(im);
+    const target = Math.max(rec?.max ?? 0, rec?.min ?? 0);
+    const qty = Math.max(target - stock, 1);
+    setBasket((b) => [
+      ...b,
+      { itemMasterId: im.id, name: im.name, qty, unit: im.uom, category: im.stock_type === "food" ? "Food" : "General", estCost: qty * im.last_price },
+    ]);
   }
 
-  function updateQty(itemId: string, qty: number) {
-    setBasket((b) => b.map((x) => (x.itemId === itemId ? { ...x, qty } : x)));
+  function removeFromBasket(itemMasterId: string) {
+    setBasket((b) => b.filter((x) => x.itemMasterId !== itemMasterId));
+  }
+
+  function updateQty(itemMasterId: string, qty: number) {
+    setBasket((b) => b.map((x) => (x.itemMasterId === itemMasterId ? { ...x, qty } : x)));
   }
 
   async function submitBasket() {
     setSubmitting(true);
     try {
       for (const line of basket) {
-        const linkedId = itemMaster?.find((im) => im.stock_id === line.itemId)?.id ?? null;
         await create.mutateAsync({
           item: line.name, qty: line.qty, unit: line.unit, category: line.category,
-          urgency: "Medium", est_cost: line.estCost, linked_inventory_id: linkedId,
+          urgency: "Medium", est_cost: line.estCost, linked_inventory_id: line.itemMasterId,
         } as never);
       }
       setBasket([]);
@@ -567,16 +681,16 @@ function ShoppingBasketTab() {
     <div className="grid gap-4 lg:grid-cols-2">
       <div>
         <h3 className="mb-2 text-[13px] font-semibold" style={{ color: "var(--ink-700)" }}>Low-stock items</h3>
-        {lowStock.length === 0 ? <EmptyState label="Nothing below minimum stock right now." /> : (
+        {lowStock.length === 0 ? <EmptyState label="Nothing below its par level right now." /> : (
           <div className="flex flex-col gap-2">
-            {lowStock.map((i) => (
-              <Card key={i.id} className="flex items-center justify-between !p-3">
+            {lowStock.map((im) => (
+              <Card key={im.id} className="flex items-center justify-between !p-3">
                 <div>
-                  <div className="text-[13px] font-semibold">{i.name}</div>
-                  <div className="text-xs" style={{ color: "var(--ink-400)" }}>{i.stock} {i.unit} left · min {i.min}</div>
+                  <div className="text-[13px] font-semibold">{im.name}</div>
+                  <div className="text-xs" style={{ color: "var(--ink-400)" }}>{currentStock(im)} {im.uom} left · par {stockRecord(im)?.min ?? 0}</div>
                 </div>
-                <Button variant="secondary" onClick={() => addToBasket(i)} disabled={basket.some((b) => b.itemId === i.id)}>
-                  {basket.some((b) => b.itemId === i.id) ? "In basket" : "Add"}
+                <Button variant="secondary" onClick={() => addToBasket(im)} disabled={basket.some((b) => b.itemMasterId === im.id)}>
+                  {basket.some((b) => b.itemMasterId === im.id) ? "In basket" : "Add"}
                 </Button>
               </Card>
             ))}
@@ -589,17 +703,17 @@ function ShoppingBasketTab() {
           <Card>
             <div className="flex flex-col gap-3">
               {basket.map((b) => (
-                <div key={b.itemId} className="flex items-center gap-2">
+                <div key={b.itemMasterId} className="flex items-center gap-2">
                   <div className="min-w-0 flex-1 text-[13px] font-medium">{b.name}</div>
                   <input
                     type="number"
                     className="w-20 rounded-lg border px-2 py-1 text-sm"
                     style={{ borderColor: "var(--border-strong)" }}
                     value={b.qty}
-                    onChange={(e) => updateQty(b.itemId, Number(e.target.value))}
+                    onChange={(e) => updateQty(b.itemMasterId, Number(e.target.value))}
                   />
                   <span className="text-xs" style={{ color: "var(--ink-400)" }}>{b.unit}</span>
-                  <Button size="sm" variant="danger" onClick={() => removeFromBasket(b.itemId)}>Remove</Button>
+                  <Button size="sm" variant="danger" onClick={() => removeFromBasket(b.itemMasterId)}>Remove</Button>
                 </div>
               ))}
               <Button onClick={submitBasket} disabled={submitting}>
@@ -615,28 +729,273 @@ function ShoppingBasketTab() {
 
 function SuppliersTab() {
   const { data, isLoading } = useList<Supplier>("suppliers", "/suppliers");
+  const { data: orders } = useList<PurchaseOrder>("purchase-orders", "/purchasing/purchase-orders");
+  const qc = useQueryClient();
+  const [modal, setModal] = useState<"add" | Supplier | null>(null);
+  const remove = useMutation({
+    mutationFn: async (id: string) => api.delete(`/suppliers/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["suppliers"] }),
+  });
+
   if (isLoading) return <Spinner />;
-  if (!data || data.length === 0) return <EmptyState label="No suppliers yet." />;
+
+  const spendBySupplier = new Map<string, { total: number; orders: number }>();
+  for (const po of orders ?? []) {
+    const row = spendBySupplier.get(po.supplier_id) ?? { total: 0, orders: 0 };
+    row.total += po.total;
+    row.orders += 1;
+    spendBySupplier.set(po.supplier_id, row);
+  }
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {data.map((s) => (
-        <Card key={s.id}>
-          <div className="mb-2 flex items-start justify-between gap-2">
-            <div className="font-display text-[14.5px] font-semibold">{s.name}</div>
-            {s.rating != null && (
-              <Badge tone="good">
-                <Icon name="star" className="h-3 w-3" /> {s.rating}
-              </Badge>
-            )}
-          </div>
-          <div className="mb-2.5 text-xs" style={{ color: "var(--ink-500)" }}>{s.category}</div>
-          <div className="flex flex-col gap-1 text-[13px]">
-            <div className="flex justify-between"><span style={{ color: "var(--ink-500)" }}>Contact</span><span className="font-semibold">{s.contact ?? "—"}</span></div>
-            <div className="flex justify-between"><span style={{ color: "var(--ink-500)" }}>Phone</span><span className="font-semibold">{s.phone ?? "—"}</span></div>
-            <div className="flex justify-between"><span style={{ color: "var(--ink-500)" }}>Partner since</span><span className="font-semibold">{s.since ?? "—"}</span></div>
-          </div>
-        </Card>
-      ))}
+    <div>
+      <div className="mb-4 flex justify-end">
+        <Button onClick={() => setModal("add")}>+ Add Supplier</Button>
+      </div>
+      {!data || data.length === 0 ? <EmptyState label="No suppliers yet." /> : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {data.map((s) => {
+            const spend = spendBySupplier.get(s.id);
+            return (
+              <Card key={s.id}>
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <div className="font-display text-[14.5px] font-semibold">{s.name}</div>
+                  {s.rating != null && (
+                    <Badge tone="good">
+                      <Icon name="star" className="h-3 w-3" /> {s.rating}
+                    </Badge>
+                  )}
+                </div>
+                <div className="mb-2.5 text-xs" style={{ color: "var(--ink-500)" }}>{s.category}</div>
+                <div className="flex flex-col gap-1 text-[13px]">
+                  <div className="flex justify-between"><span style={{ color: "var(--ink-500)" }}>Contact</span><span className="font-semibold">{s.contact ?? "—"}</span></div>
+                  <div className="flex justify-between"><span style={{ color: "var(--ink-500)" }}>Phone</span><span className="font-semibold">{s.phone ?? "—"}</span></div>
+                  <div className="flex justify-between"><span style={{ color: "var(--ink-500)" }}>Email</span><span className="font-semibold">{s.email ?? "—"}</span></div>
+                  <div className="flex justify-between"><span style={{ color: "var(--ink-500)" }}>Partner since</span><span className="font-semibold">{s.since ?? "—"}</span></div>
+                  <div className="flex justify-between"><span style={{ color: "var(--ink-500)" }}>Total purchased</span><span className="font-semibold">KWD {(spend?.total ?? 0).toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span style={{ color: "var(--ink-500)" }}>Orders placed</span><span className="font-semibold">{spend?.orders ?? 0}</span></div>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => setModal(s)}>Edit</Button>
+                  <Button
+                    size="sm" variant="danger"
+                    onClick={() => confirm(`Delete "${s.name}"? This can't be undone.`) && remove.mutate(s.id)}
+                    disabled={remove.isPending}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+      {modal && <SupplierModal supplier={modal === "add" ? undefined : modal} onClose={() => setModal(null)} />}
     </div>
+  );
+}
+
+function SupplierModal({ supplier, onClose }: { supplier?: Supplier; onClose: () => void }) {
+  const create = useCreate<Supplier>("suppliers", "/suppliers");
+  const update = useUpdate<Supplier>("suppliers", "/suppliers");
+  const [form, setForm] = useState({
+    name: supplier?.name ?? "", category: supplier?.category ?? "",
+    contact: supplier?.contact ?? "", phone: supplier?.phone ?? "", email: supplier?.email ?? "",
+    rating: supplier?.rating ?? 0, since: supplier?.since ?? "",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const pending = create.isPending || update.isPending;
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const payload = {
+      name: form.name, category: form.category,
+      contact: form.contact || null, phone: form.phone || null, email: form.email || null,
+      rating: form.rating || null, since: form.since || null,
+    };
+    try {
+      if (supplier) await update.mutateAsync({ id: supplier.id, payload });
+      else await create.mutateAsync(payload as never);
+      onClose();
+    } catch {
+      setError("Could not save — check that the name isn't already used by another supplier.");
+    }
+  }
+
+  return (
+    <Modal title={supplier ? `Edit ${supplier.name}` : "Add supplier"} onClose={onClose}>
+      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1 text-[13px] font-medium">Supplier name
+          <input required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+            value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} />
+        </label>
+        <label className="flex flex-col gap-1 text-[13px] font-medium">Category
+          <input required placeholder="e.g. Fresh Produce, Cleaning Supplies" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+            value={form.category} onChange={(e) => setForm((s) => ({ ...s, category: e.target.value }))} />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1 text-[13px] font-medium">Contact person
+            <input className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+              value={form.contact} onChange={(e) => setForm((s) => ({ ...s, contact: e.target.value }))} />
+          </label>
+          <label className="flex flex-col gap-1 text-[13px] font-medium">Phone
+            <input className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+              value={form.phone} onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))} />
+          </label>
+          <label className="flex flex-col gap-1 text-[13px] font-medium">Email
+            <input type="email" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+              value={form.email} onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))} />
+          </label>
+          <label className="flex flex-col gap-1 text-[13px] font-medium">Rating (0–5)
+            <input type="number" min={0} max={5} step={0.1} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+              value={form.rating} onChange={(e) => setForm((s) => ({ ...s, rating: Number(e.target.value) }))} />
+          </label>
+          <label className="flex flex-col gap-1 text-[13px] font-medium">Partner since
+            <input placeholder="e.g. 2023" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+              value={form.since} onChange={(e) => setForm((s) => ({ ...s, since: e.target.value }))} />
+          </label>
+        </div>
+        {error && (
+          <div className="rounded-lg px-3 py-2 text-[12.5px]" style={{ background: "var(--status-critical-bg)", color: "var(--status-critical)" }}>
+            {error}
+          </div>
+        )}
+        <Button type="submit" disabled={pending}>{pending ? "Saving..." : supplier ? "Save changes" : "Add Supplier"}</Button>
+      </form>
+    </Modal>
+  );
+}
+
+function CreditNotesTab() {
+  const { data, isLoading } = useList<CreditNote>("credit-notes", "/credit-notes");
+  const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
+  const { data: orders } = useList<PurchaseOrder>("purchase-orders", "/purchasing/purchase-orders");
+  const qc = useQueryClient();
+  const [modal, setModal] = useState<"add" | CreditNote | null>(null);
+  const remove = useMutation({
+    mutationFn: async (id: string) => api.delete(`/credit-notes/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["credit-notes"] }),
+  });
+  const supplierName = (id: string) => suppliers?.find((s) => s.id === id)?.name ?? "—";
+  const poCode = (id: string | null) => (id ? orders?.find((o) => o.id === id)?.code ?? "—" : "—");
+
+  if (isLoading) return <Spinner />;
+
+  return (
+    <div>
+      <p className="mb-3 text-[13px]" style={{ color: "var(--ink-500)" }}>
+        Supplier-issued credits — returns, overcharges, damaged-goods refunds — tracked separately from the
+        original PO/GRN, ready to reconcile against a future accounting sync.
+      </p>
+      <div className="mb-4 flex justify-end">
+        <Button onClick={() => setModal("add")}>+ Add Credit Note</Button>
+      </div>
+      {!data || data.length === 0 ? <EmptyState label="No credit notes yet." /> : (
+        <Table>
+          <thead><tr><Th>Supplier</Th><Th>PO</Th><Th>Date</Th><Th>Reason</Th><Th>Amount</Th><Th>{" "}</Th></tr></thead>
+          <tbody>
+            {data.map((c) => (
+              <tr key={c.id}>
+                <Td className="font-medium">{supplierName(c.supplier_id)}</Td>
+                <Td>{poCode(c.po_id)}</Td>
+                <Td>{fmtDate(c.date)}</Td>
+                <Td>{c.reason}</Td>
+                <Td>KWD {c.amount.toFixed(2)}</Td>
+                <Td>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => setModal(c)}>Edit</Button>
+                    <Button
+                      size="sm" variant="danger"
+                      onClick={() => confirm(`Delete this credit note for ${supplierName(c.supplier_id)}? This can't be undone.`) && remove.mutate(c.id)}
+                      disabled={remove.isPending}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      {modal && <CreditNoteModal creditNote={modal === "add" ? undefined : modal} onClose={() => setModal(null)} />}
+    </div>
+  );
+}
+
+function CreditNoteModal({ creditNote, onClose }: { creditNote?: CreditNote; onClose: () => void }) {
+  const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
+  const { data: orders } = useList<PurchaseOrder>("purchase-orders", "/purchasing/purchase-orders");
+  const create = useCreate<CreditNote>("credit-notes", "/credit-notes");
+  const update = useUpdate<CreditNote>("credit-notes", "/credit-notes");
+  const [form, setForm] = useState({
+    supplier_id: creditNote?.supplier_id ?? "", po_id: creditNote?.po_id ?? "",
+    date: creditNote?.date ?? todayIso(), reason: creditNote?.reason ?? "",
+    amount: creditNote?.amount ?? 0, notes: creditNote?.notes ?? "",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const pending = create.isPending || update.isPending;
+  const ordersForSupplier = orders?.filter((o) => o.supplier_id === form.supplier_id) ?? [];
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const payload = {
+      supplier_id: form.supplier_id, po_id: form.po_id || null,
+      date: form.date, reason: form.reason, amount: form.amount, notes: form.notes || null,
+    };
+    try {
+      if (creditNote) await update.mutateAsync({ id: creditNote.id, payload });
+      else await create.mutateAsync(payload as never);
+      onClose();
+    } catch {
+      setError("Could not save — please try again.");
+    }
+  }
+
+  return (
+    <Modal title={creditNote ? "Edit credit note" : "Add credit note"} onClose={onClose}>
+      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1 text-[13px] font-medium">Supplier
+          <select required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+            value={form.supplier_id} onChange={(e) => setForm((s) => ({ ...s, supplier_id: e.target.value, po_id: "" }))}>
+            <option value="">Select a supplier…</option>
+            {suppliers?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-[13px] font-medium">Related purchase order (optional)
+          <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+            value={form.po_id} onChange={(e) => setForm((s) => ({ ...s, po_id: e.target.value }))} disabled={!form.supplier_id}>
+            <option value="">— not tied to a specific PO —</option>
+            {ordersForSupplier.map((o) => <option key={o.id} value={o.id}>{o.code}</option>)}
+          </select>
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1 text-[13px] font-medium">Date
+            <input type="date" required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+              value={form.date} onChange={(e) => setForm((s) => ({ ...s, date: e.target.value }))} />
+          </label>
+          <label className="flex flex-col gap-1 text-[13px] font-medium">Amount (KWD)
+            <input type="number" step="0.01" required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+              value={form.amount} onChange={(e) => setForm((s) => ({ ...s, amount: Number(e.target.value) }))} />
+          </label>
+        </div>
+        <label className="flex flex-col gap-1 text-[13px] font-medium">Reason
+          <input required placeholder="e.g. Damaged goods, overcharge, return" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+            value={form.reason} onChange={(e) => setForm((s) => ({ ...s, reason: e.target.value }))} />
+        </label>
+        <label className="flex flex-col gap-1 text-[13px] font-medium">Notes
+          <textarea className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+            value={form.notes} onChange={(e) => setForm((s) => ({ ...s, notes: e.target.value }))} />
+        </label>
+        {error && (
+          <div className="rounded-lg px-3 py-2 text-[12.5px]" style={{ background: "var(--status-critical-bg)", color: "var(--status-critical)" }}>
+            {error}
+          </div>
+        )}
+        <Button type="submit" disabled={pending}>{pending ? "Saving..." : creditNote ? "Save changes" : "Add Credit Note"}</Button>
+      </form>
+    </Modal>
   );
 }

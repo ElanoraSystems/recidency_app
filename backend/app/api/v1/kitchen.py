@@ -13,6 +13,7 @@ from app.models.finance import ResidenceSettings
 from app.models.kitchen import (
     ConsumptionLog,
     FoodInventory,
+    FoodInventoryBatch,
     MealLog,
     MenuOption,
     ProposedMenu,
@@ -148,24 +149,83 @@ async def _resolve_ingredient_stock(
     return {row.id: row for row in rows}
 
 
-async def _load_uom_map(
-    db: AsyncSession, labels: set[str], ids: set[uuid.UUID]
-) -> tuple[dict[str, UnitOfMeasure], dict[uuid.UUID, UnitOfMeasure]]:
-    """Loads every UnitOfMeasure row needed to resolve a batch of
-    ingredients' conversions in as few queries as possible — keyed both by
-    label (to find the UOM matching a stock item's plain-string unit) and
-    by id (to find an ingredient's chosen override_unit_id)."""
+async def _recompute_food_rollup(db: AsyncSession, food_inventory_id: uuid.UUID) -> None:
+    """Rewrites FoodInventory.qty/.cost/.expiry/.batch from its live batches
+    so every existing reader keeps working unchanged after a batch change."""
+    stock = await db.get(FoodInventory, food_inventory_id)
+    if not stock:
+        return
+    batches = (
+        await db.execute(
+            select(FoodInventoryBatch).where(
+                FoodInventoryBatch.food_inventory_id == food_inventory_id, FoodInventoryBatch.qty > 0
+            )
+        )
+    ).scalars().all()
+    total_qty = sum(float(b.qty) for b in batches)
+    total_value = sum(float(b.qty) * float(b.cost) for b in batches)
+    stock.qty = total_qty
+    stock.cost = (total_value / total_qty) if total_qty > 0 else 0.0
+    soonest = min((b for b in batches if b.expiry is not None), key=lambda b: b.expiry, default=None)
+    stock.expiry = soonest.expiry if soonest else None
+    stock.batch = soonest.batch_label if soonest else None
+
+
+async def _consume_fefo(db: AsyncSession, food_inventory_id: uuid.UUID, qty: float) -> None:
+    """Deducts qty from food_inventory_id's batches, earliest-expiring first
+    (batches with no expiry last), then refreshes the FoodInventory rollup."""
+    remaining = qty
+    batches = (
+        await db.execute(
+            select(FoodInventoryBatch)
+            .where(FoodInventoryBatch.food_inventory_id == food_inventory_id, FoodInventoryBatch.qty > 0)
+            .order_by(FoodInventoryBatch.expiry.is_(None), FoodInventoryBatch.expiry, FoodInventoryBatch.received_date)
+        )
+    ).scalars().all()
+    for batch in batches:
+        if remaining <= 0:
+            break
+        take = min(float(batch.qty), remaining)
+        batch.qty = float(batch.qty) - take
+        remaining -= take
+    await _recompute_food_rollup(db, food_inventory_id)
+
+
+class FoodInventoryBatchOut(BaseModel):
+    id: uuid.UUID
+    batch_label: str | None
+    qty: float
+    expiry: date | None
+    cost: float
+    received_date: date
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/food-inventory/{food_inventory_id}/batches", response_model=list[FoodInventoryBatchOut])
+async def list_food_inventory_batches(
+    food_inventory_id: uuid.UUID, db: AsyncSession = Depends(get_db), _user: User = Depends(kitchen_access)
+):
+    result = await db.execute(
+        select(FoodInventoryBatch)
+        .where(FoodInventoryBatch.food_inventory_id == food_inventory_id, FoodInventoryBatch.qty > 0)
+        .order_by(FoodInventoryBatch.expiry.is_(None), FoodInventoryBatch.expiry, FoodInventoryBatch.received_date)
+    )
+    return result.scalars().all()
+
+
+async def _load_uom_map(db: AsyncSession) -> tuple[dict[str, UnitOfMeasure], dict[uuid.UUID, UnitOfMeasure]]:
+    """Loads the whole (small) units_of_measure table — keyed both by
+    lowercased label (a stock item's plain-string unit, e.g. "Kg", can
+    differ in case from the canonical UOM label "kg"; lowercasing both
+    sides of every lookup avoids silently dropping that ingredient from
+    yield/cost calculations) and by id (an ingredient's override_unit_id)."""
     by_label: dict[str, UnitOfMeasure] = {}
     by_id: dict[uuid.UUID, UnitOfMeasure] = {}
-    if labels:
-        for row in (await db.execute(select(UnitOfMeasure).where(UnitOfMeasure.label.in_(labels)))).scalars().all():
-            by_label[row.label] = row
-            by_id[row.id] = row
-    missing_ids = ids - set(by_id)
-    if missing_ids:
-        for row in (await db.execute(select(UnitOfMeasure).where(UnitOfMeasure.id.in_(missing_ids)))).scalars().all():
-            by_label[row.label] = row
-            by_id[row.id] = row
+    for row in (await db.execute(select(UnitOfMeasure))).scalars().all():
+        by_label[row.label.lower()] = row
+        by_id[row.id] = row
     return by_label, by_id
 
 
@@ -180,7 +240,7 @@ def _resolve_ingredient_qty(
     if not ingredient.override_unit_id or not stock:
         return qty, stock.unit if stock else "—"
     override_uom = uom_by_id.get(ingredient.override_unit_id)
-    stock_uom = uom_by_label.get(stock.unit)
+    stock_uom = uom_by_label.get(stock.unit.lower())
     if not override_uom:
         return qty, "—"
     if not stock_uom:
@@ -191,6 +251,37 @@ def _resolve_ingredient_qty(
         # Save-time validation (_validate_ingredients) is what actually
         # prevents this — degrade gracefully here rather than crash a read.
         return qty, override_uom.label
+
+
+async def _compute_raw_yield_g(db: AsyncSession, ingredients: list[RecipeIngredientIn]) -> float:
+    """The recipe's raw batch weight, auto-derived from its own ingredient
+    lines rather than typed in by hand — sums every ingredient's quantity
+    converted to grams. A sub-recipe ingredient's qty is already grams (its
+    own finished yield). A stock ingredient measured in a unit that isn't
+    on the mass "family" — volume (ml/L) or count (units/pack/bottle) —
+    can't convert to grams without a density or per-unit weight this app
+    doesn't track, so it's left out of the sum rather than guessed at."""
+    stock_by_id = await _resolve_ingredient_stock(db, ingredients)
+    uom_by_label, uom_by_id = await _load_uom_map(db)
+    gram_uom = uom_by_label.get("g")
+
+    total_g = 0.0
+    for i in ingredients:
+        if i.sub_recipe_id:
+            total_g += float(i.qty)
+            continue
+        stock = stock_by_id.get(i.food_inventory_id)
+        if not stock or not gram_uom:
+            continue
+        stock_uom = uom_by_label.get(stock.unit.lower())
+        if not stock_uom:
+            continue
+        qty_in_stock_unit, _ = _resolve_ingredient_qty(i, stock, uom_by_label, uom_by_id)
+        try:
+            total_g += unit_conv.convert(qty_in_stock_unit, stock_uom, gram_uom)
+        except unit_conv.IncompatibleUnitsError:
+            continue
+    return round(total_g, 1)
 
 
 async def _resolve_recipe(
@@ -215,9 +306,7 @@ async def _resolve_recipe(
         await db.execute(select(RecipeIngredient).where(RecipeIngredient.recipe_id == recipe.id))
     ).scalars().all()
     stock_by_id = await _resolve_ingredient_stock(db, ingredients)
-    stock_unit_labels = {s.unit for s in stock_by_id.values()}
-    override_ids = {i.override_unit_id for i in ingredients if i.override_unit_id}
-    uom_by_label, uom_by_id = await _load_uom_map(db, stock_unit_labels, override_ids)
+    uom_by_label, uom_by_id = await _load_uom_map(db)
 
     ingredient_outs = []
     resolved_for_cost = []
@@ -329,8 +418,7 @@ async def _validate_ingredients(
     override_ids = {i.override_unit_id for i in ingredients if i.override_unit_id}
     if not override_ids:
         return
-    stock_unit_labels = {s.unit for s in stock_by_id.values()}
-    uom_by_label, uom_by_id = await _load_uom_map(db, stock_unit_labels, override_ids)
+    uom_by_label, uom_by_id = await _load_uom_map(db)
     for i in ingredients:
         if not i.override_unit_id:
             continue
@@ -338,7 +426,7 @@ async def _validate_ingredients(
         override_uom = uom_by_id.get(i.override_unit_id)
         if not override_uom:
             raise HTTPException(400, "Unknown unit selected for an ingredient")
-        stock_uom = uom_by_label.get(stock.unit)
+        stock_uom = uom_by_label.get(stock.unit.lower())
         if not stock_uom:
             raise HTTPException(
                 400,
@@ -369,9 +457,7 @@ async def _expand_consumption(
         await db.execute(select(RecipeIngredient).where(RecipeIngredient.recipe_id == recipe.id))
     ).scalars().all()
     stock_by_id = await _resolve_ingredient_stock(db, ingredients)
-    stock_unit_labels = {s.unit for s in stock_by_id.values()}
-    override_ids = {i.override_unit_id for i in ingredients if i.override_unit_id}
-    uom_by_label, uom_by_id = await _load_uom_map(db, stock_unit_labels, override_ids)
+    uom_by_label, uom_by_id = await _load_uom_map(db)
 
     out: list[tuple[FoodInventory, float]] = []
     for i in ingredients:
@@ -423,7 +509,7 @@ async def create_recipe(
         allergens=payload.allergens,
         notes=payload.notes,
         prep_loss_pct=payload.prep_loss_pct,
-        raw_yield_g=payload.raw_yield_g,
+        raw_yield_g=await _compute_raw_yield_g(db, payload.ingredients),
         portion_size_g=payload.portion_size_g,
         cooking_method=payload.cooking_method,
         method=payload.method,
@@ -449,9 +535,10 @@ async def update_recipe(
     if not recipe:
         raise HTTPException(404, "Recipe not found")
     await _validate_ingredients(db, payload.ingredients, recipe_id=recipe.id)
-    for field in ("name", "category", "allergens", "notes", "prep_loss_pct", "raw_yield_g",
+    for field in ("name", "category", "allergens", "notes", "prep_loss_pct",
                   "portion_size_g", "cooking_method", "method"):
         setattr(recipe, field, getattr(payload, field))
+    recipe.raw_yield_g = await _compute_raw_yield_g(db, payload.ingredients)
     result = await db.execute(select(RecipeIngredient).where(RecipeIngredient.recipe_id == recipe.id))
     for existing in result.scalars().all():
         await db.delete(existing)
@@ -565,7 +652,7 @@ async def log_meal(
             consumed_by_id[stock.id] = consumed_by_id.get(stock.id, 0.0) + qty
         for stock_id, consumed_qty in consumed_by_id.items():
             match = stock_by_id[stock_id]
-            match.qty = max(0, float(match.qty) - consumed_qty)
+            await _consume_fefo(db, stock_id, consumed_qty)
             db.add(
                 ConsumptionLog(
                     date=payload.date,
@@ -685,7 +772,7 @@ async def create_stock_transfer(
         item = await db.get(FoodInventory, line.food_inventory_id)
         if not item:
             raise HTTPException(404, "One of the selected stock items was not found")
-        item.qty = max(0, float(item.qty) - line.qty)
+        await _consume_fefo(db, line.food_inventory_id, line.qty)
         db.add(
             StockTransferLine(
                 transfer_id=transfer.id,
@@ -792,7 +879,7 @@ async def log_waste(
         item = await db.get(FoodInventory, line.food_inventory_id)
         if not item:
             raise HTTPException(404, "One of the selected stock items was not found")
-        item.qty = max(0, float(item.qty) - line.qty)
+        await _consume_fefo(db, line.food_inventory_id, line.qty)
         item_master = (
             await db.execute(
                 select(ItemMaster).where(

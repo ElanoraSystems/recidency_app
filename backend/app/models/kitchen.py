@@ -91,6 +91,28 @@ class FoodInventory(Base, UUIDPKMixin, TimestampMixin):
         ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True
     )
     cost: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
+    min: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    max: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+
+
+class FoodInventoryBatch(Base, UUIDPKMixin):
+    """One received lot of a food item. FoodInventory.qty/.cost/.expiry/
+    .batch are a maintained rollup of these — qty summed, cost weighted-
+    averaged, expiry/batch taken from the soonest-expiring lot with stock
+    left — so every existing reader of FoodInventory keeps working
+    unchanged while gaining FEFO accuracy. See _recompute_food_rollup and
+    _consume_fefo in app/api/v1/kitchen.py."""
+
+    __tablename__ = "food_inventory_batches"
+
+    food_inventory_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("food_inventory.id", ondelete="CASCADE")
+    )
+    batch_label: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    qty: Mapped[float] = mapped_column(Numeric(12, 3))
+    expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
+    cost: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
+    received_date: Mapped[date] = mapped_column(Date)
 
 
 class MealLog(Base, UUIDPKMixin, TimestampMixin):

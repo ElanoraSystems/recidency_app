@@ -8,14 +8,14 @@ import { AttachmentsPanel } from "../components/AttachmentsPanel";
 import { Icon } from "../components/icons";
 import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { NAV } from "../layout/nav";
-import type { Area, AreaType, Asset, MealCategory, ResidenceSettingsInfo, ShiftPattern, StaffMember, TaskCategory, UnitOfMeasureEntry, WasteReason } from "../types";
+import type { Area, Asset, MealCategory, ResidenceSettingsInfo, StaffMember, TaskCategory, UnitOfMeasureEntry, WasteReason } from "../types";
 
 interface RoleRow { id: string; key: string; label: string; modules: string[] }
 interface FamilyAccountRow { id: string; name: string | null; email: string | null; relation: string; active: boolean; modules: string[] }
 
 const TABS = [
-  "Residence", "Residence Setup", "Asset Register", "Family Access", "Roles & Access", "Housekeeping Areas",
-  "Area Types", "Shift Patterns", "Meal Categories", "Task Categories", "Waste Reasons", "Units of Measure",
+  "Residence", "Asset Register", "Family Access", "Roles & Access",
+  "Meal Categories", "Task Categories", "Waste Reasons", "Units of Measure",
   "Notification Preferences",
 ] as const;
 
@@ -23,7 +23,7 @@ export function Settings() {
   const { user } = useAuth();
   const isOwner = user?.user_type === "owner";
   const [tab, setTab] = useState<(typeof TABS)[number]>("Residence");
-  const [modal, setModal] = useState<"area" | "asset" | "family" | null>(null);
+  const [modal, setModal] = useState<"asset" | "family" | null>(null);
 
   return (
     <div>
@@ -31,7 +31,6 @@ export function Settings() {
         title="Settings"
         subtitle="Configure the residence profile, layout, family access, roles and notification preferences."
         action={
-          tab === "Residence Setup" && isOwner ? <Button onClick={() => setModal("area")}>+ Add Area</Button> :
           tab === "Asset Register" ? <Button onClick={() => setModal("asset")}>+ Add Asset</Button> :
           tab === "Family Access" && isOwner ? <Button onClick={() => setModal("family")}>+ Add Family Member</Button> : undefined
         }
@@ -55,23 +54,9 @@ export function Settings() {
       </div>
 
       {tab === "Residence" && <ResidenceTab isOwner={isOwner} />}
-      {tab === "Residence Setup" && <ResidenceSetupTab isOwner={isOwner} modalOpen={modal === "area"} onCloseModal={() => setModal(null)} />}
       {tab === "Asset Register" && <AssetRegisterTab modalOpen={modal === "asset"} onCloseModal={() => setModal(null)} />}
       {tab === "Family Access" && <FamilyAccessTab isOwner={isOwner} modalOpen={modal === "family"} onCloseModal={() => setModal(null)} />}
       {tab === "Roles & Access" && <RolesTab isOwner={isOwner} />}
-      {tab === "Housekeeping Areas" && <HousekeepingAreasTab />}
-      {tab === "Area Types" && (
-        <SimpleLabelListTab<AreaType>
-          isOwner={isOwner} queryKey="area-types" endpoint="/area-types" itemNoun="area type"
-          helperText="Define the Type options available when adding or editing a residence area in Residence Setup."
-        />
-      )}
-      {tab === "Shift Patterns" && (
-        <SimpleLabelListTab<ShiftPattern>
-          isOwner={isOwner} queryKey="shift-patterns" endpoint="/shift-patterns" itemNoun="shift pattern"
-          helperText="Define the shift values staff scheduling can pick from — e.g. '07:00-15:00' or 'Off'. This drives the dropdown in People > Shift Schedule."
-        />
-      )}
       {tab === "Meal Categories" && (
         <SimpleLabelListTab<MealCategory>
           isOwner={isOwner} queryKey="meal-categories" endpoint="/kitchen/meal-categories" itemNoun="meal category"
@@ -200,182 +185,6 @@ function ResidenceTab({ isOwner }: { isOwner: boolean }) {
         <p className="mt-3 text-xs" style={{ color: "var(--ink-400)" }}>Only the Owner can edit residence settings.</p>
       )}
     </Card>
-  );
-}
-
-function ResidenceSetupTab({ isOwner, modalOpen, onCloseModal }: { isOwner: boolean; modalOpen: boolean; onCloseModal: () => void }) {
-  const { data: areas, isLoading } = useList<Area>("areas", "/areas");
-  const { data: assets } = useList<Asset>("assets", "/assets");
-  const qc = useQueryClient();
-  const remove = useMutation({
-    mutationFn: async (id: string) => api.delete(`/areas/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["areas"] }),
-  });
-  const [editing, setEditing] = useState<Area | null>(null);
-  const [managingAssets, setManagingAssets] = useState<Area | null>(null);
-
-  if (isLoading) return <Spinner />;
-
-  const buckets: Record<string, number> = {};
-  for (const a of areas ?? []) buckets[a.category] = (buckets[a.category] ?? 0) + 1;
-
-  return (
-    <div>
-      <p className="mb-3.5 text-[13px]" style={{ color: "var(--ink-500)" }}>
-        Configure the residence&rsquo;s own rooms, kitchens, dining areas, offices and other facilities. This list
-        is used across the app as the source of locations for the Asset Register and Housekeeping.
-      </p>
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatTile label="Total Areas" icon="building" value={areas?.length ?? 0} />
-        <StatTile label="Area Types" icon="grid" value={Object.keys(buckets).length} />
-        <StatTile label="Assets Assigned" icon="maintenance" value={assets?.length ?? 0} sub="Across all areas" />
-      </div>
-      {Object.keys(buckets).length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {Object.entries(buckets).map(([label, count]) => <Badge key={label}>{label} · {count}</Badge>)}
-        </div>
-      )}
-      {!areas || areas.length === 0 ? <EmptyState label="No areas set up yet." /> : (
-        <Table>
-          <thead><tr><Th>Area name</Th><Th>Type</Th><Th>Assets here</Th><Th>{" "}</Th></tr></thead>
-          <tbody>
-            {areas.map((a) => {
-              const assetCount = assets?.filter((x) => x.location_id === a.id).length ?? 0;
-              return (
-                <tr key={a.id}>
-                  <Td className="font-medium">{a.name}</Td>
-                  <Td><Badge>{a.category}</Badge></Td>
-                  <Td>
-                    <button className="font-semibold underline-offset-2 hover:underline" style={{ color: "var(--brass-600)" }} onClick={() => setManagingAssets(a)}>
-                      {assetCount}
-                    </button>
-                  </Td>
-                  <Td>
-                    {isOwner && (
-                      <div className="flex gap-2">
-                        <button className="text-xs font-semibold" style={{ color: "var(--brass-600)" }} onClick={() => setEditing(a)}>Edit</button>
-                        <button
-                          className="text-xs font-semibold"
-                          style={{ color: "var(--brass-600)" }}
-                          onClick={async () => {
-                            const res = await api.get(`/patrol/areas/${a.id}/qr-code`, { responseType: "blob" });
-                            const blobUrl = URL.createObjectURL(res.data as Blob);
-                            window.open(blobUrl, "_blank");
-                            setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
-                          }}
-                        >
-                          Print QR
-                        </button>
-                        <button className="text-xs font-semibold" style={{ color: "var(--status-critical)" }} onClick={() => remove.mutate(a.id)}>Remove</button>
-                      </div>
-                    )}
-                  </Td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </Table>
-      )}
-      {modalOpen && <AreaModal onClose={onCloseModal} />}
-      {editing && <AreaModal area={editing} onClose={() => setEditing(null)} />}
-      {managingAssets && <AreaAssetsModal area={managingAssets} onClose={() => setManagingAssets(null)} />}
-    </div>
-  );
-}
-
-function AreaAssetsModal({ area, onClose }: { area: Area; onClose: () => void }) {
-  const qc = useQueryClient();
-  const { data: assets } = useList<Asset>("assets", "/assets");
-  const [pickId, setPickId] = useState("");
-  const setLocation = useMutation({
-    mutationFn: async ({ assetId, locationId }: { assetId: string; locationId: string | null }) =>
-      api.patch(`/assets/${assetId}`, { location_id: locationId }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["assets"] }); setPickId(""); },
-  });
-
-  const assigned = (assets ?? []).filter((a) => a.location_id === area.id);
-  const unassignedHere = (assets ?? []).filter((a) => a.location_id !== area.id);
-
-  return (
-    <Modal title={`${area.name} — assets`} onClose={onClose}>
-      <div className="flex flex-col gap-3">
-        {assigned.length === 0 ? (
-          <p className="text-[12.5px]" style={{ color: "var(--ink-400)" }}>No assets assigned to this area yet.</p>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {assigned.map((a) => (
-              <div key={a.id} className="flex items-center justify-between rounded-lg px-3 py-2 text-[13px]" style={{ background: "var(--surface-sunken)" }}>
-                <span>{a.name} <span style={{ color: "var(--ink-400)" }}>· {a.category}</span></span>
-                <button
-                  type="button"
-                  className="text-xs font-semibold"
-                  style={{ color: "var(--status-critical)" }}
-                  onClick={() => setLocation.mutate({ assetId: a.id, locationId: null })}
-                  disabled={setLocation.isPending}
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <form
-          className="flex items-center gap-2"
-          onSubmit={(e) => { e.preventDefault(); if (pickId) setLocation.mutate({ assetId: pickId, locationId: area.id }); }}
-        >
-          <select className="flex-1 rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-            value={pickId} onChange={(e) => setPickId(e.target.value)}>
-            <option value="">Select an existing asset…</option>
-            {unassignedHere.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-          <Button type="submit" variant="secondary" disabled={setLocation.isPending || !pickId}>+ Assign</Button>
-        </form>
-        <p className="text-[12px]" style={{ color: "var(--ink-400)" }}>
-          To register a brand-new asset, use Settings → Asset Register → Add Asset, then assign its location here or there.
-        </p>
-      </div>
-    </Modal>
-  );
-}
-
-function AreaModal({ area, onClose }: { area?: Area; onClose: () => void }) {
-  const qc = useQueryClient();
-  const { data: areaTypesRaw } = useList<AreaType>("area-types", "/area-types");
-  // The generic list endpoint always sorts descending, so re-sort A-Z here
-  // rather than showing types in a confusing, effectively-random order.
-  const areaTypes = [...(areaTypesRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
-  const [form, setForm] = useState({ name: area?.name ?? "", category: area?.category ?? "" });
-  useEffect(() => {
-    if (areaTypes.length > 0 && !form.category) {
-      setForm((s) => ({ ...s, category: areaTypes[0].label }));
-    }
-  }, [areaTypes, form.category]);
-  const save = useMutation({
-    mutationFn: async () =>
-      area ? api.patch(`/areas/${area.id}`, form) : api.post("/areas", { ...form, checklist: [], completion: 0 }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["areas"] }); onClose(); },
-  });
-
-  const knownLabels = new Set(areaTypes.map((t) => t.label));
-
-  return (
-    <Modal title={area ? "Edit area" : "Add residence area"} onClose={onClose}>
-      <form onSubmit={(e) => { e.preventDefault(); save.mutate(); }} className="flex flex-col gap-3">
-        <label className="flex flex-col gap-1 text-[13px] font-medium">Area name
-          <input required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-            value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} />
-        </label>
-        <label className="flex flex-col gap-1 text-[13px] font-medium">Type
-          <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-            value={form.category} onChange={(e) => setForm((s) => ({ ...s, category: e.target.value }))}>
-            {form.category && !knownLabels.has(form.category) && <option value={form.category}>{form.category} (not in the list)</option>}
-            {areaTypes.map((t) => <option key={t.id} value={t.label}>{t.label}</option>)}
-          </select>
-          <span className="text-[11.5px]" style={{ color: "var(--ink-400)" }}>Manage the available types in Settings → Area Types.</span>
-        </label>
-        <Button type="submit" disabled={save.isPending}>{save.isPending ? "Saving..." : area ? "Save" : "Add Area"}</Button>
-      </form>
-    </Modal>
   );
 }
 
@@ -910,94 +719,6 @@ function RolesTab({ isOwner }: { isOwner: boolean }) {
       </div>
       {!isOwner && <p className="mt-2 text-xs" style={{ color: "var(--ink-400)" }}>Only the Owner can edit role access.</p>}
     </div>
-  );
-}
-
-function HousekeepingAreasTab() {
-  const { data: areas, isLoading } = useList<Area>("areas", "/areas");
-  const [editing, setEditing] = useState<Area | null>(null);
-  if (isLoading) return <Spinner />;
-
-  return (
-    <div>
-      <p className="mb-4 text-[13px]" style={{ color: "var(--ink-500)" }}>
-        Manage each area&rsquo;s cleaning checklist here. To add, rename or remove an area itself, use{" "}
-        <span className="font-semibold" style={{ color: "var(--ink-700)" }}>Residence Setup</span>.
-      </p>
-      {!areas || areas.length === 0 ? (
-        <EmptyState label="No areas configured yet — add one in Residence Setup first." />
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {areas.map((a) => (
-            <Card key={a.id} className="cursor-pointer">
-              <div onClick={() => setEditing(a)}>
-                <div className="mb-1 text-[13.5px] font-semibold">{a.name}</div>
-                <div className="mb-2 text-xs" style={{ color: "var(--ink-500)" }}>{a.category}</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {a.checklist.length === 0
-                    ? <span className="text-xs" style={{ color: "var(--ink-300)" }}>No checklist set — click to add</span>
-                    : a.checklist.map((c) => <Badge key={c}>{c}</Badge>)}
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-      {editing && <AreaChecklistModal area={editing} onClose={() => setEditing(null)} />}
-    </div>
-  );
-}
-
-function AreaChecklistModal({ area, onClose }: { area: Area; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [checklist, setChecklist] = useState(area.checklist);
-  const [newItem, setNewItem] = useState("");
-  const save = useMutation({
-    mutationFn: async (next: string[]) => api.patch(`/areas/${area.id}`, { checklist: next }),
-    onSuccess: (_res, next) => { qc.invalidateQueries({ queryKey: ["areas"] }); setChecklist(next); },
-  });
-
-  function addItem() {
-    const trimmed = newItem.trim();
-    if (!trimmed) return;
-    const next = [...checklist, trimmed];
-    save.mutate(next);
-    setNewItem("");
-  }
-  function removeItem(idx: number) {
-    save.mutate(checklist.filter((_, i) => i !== idx));
-  }
-
-  return (
-    <Modal title={`${area.name} — cleaning checklist`} onClose={onClose}>
-      <div className="flex flex-col gap-3">
-        {checklist.length === 0 ? (
-          <p className="text-[12.5px]" style={{ color: "var(--ink-400)" }}>No checklist items yet — add the first one below.</p>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {checklist.map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between rounded-lg px-3 py-2 text-[13px]" style={{ background: "var(--surface-sunken)" }}>
-                {item}
-                <button
-                  type="button"
-                  className="text-xs font-semibold"
-                  style={{ color: "var(--status-critical)" }}
-                  onClick={() => removeItem(idx)}
-                  disabled={save.isPending}
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <form className="flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); addItem(); }}>
-          <input placeholder="e.g. Vacuum carpets" className="flex-1 rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-            value={newItem} onChange={(e) => setNewItem(e.target.value)} />
-          <Button type="submit" variant="secondary" disabled={save.isPending || !newItem.trim()}>+ Add</Button>
-        </form>
-      </div>
-    </Modal>
   );
 }
 

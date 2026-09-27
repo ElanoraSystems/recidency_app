@@ -16,6 +16,7 @@ from app.api.v1 import (
     people,
     purchasing,
     settings as settings_router,
+    stock_count,
     tasks,
     vehicles,
 )
@@ -41,6 +42,7 @@ app.include_router(people.router, prefix=API_PREFIX)
 app.include_router(kitchen.router, prefix=API_PREFIX)
 app.include_router(purchasing.router, prefix=API_PREFIX)
 app.include_router(purchasing.item_master_router, prefix=API_PREFIX)
+app.include_router(stock_count.router, prefix=API_PREFIX)
 app.include_router(facilities.router, prefix=API_PREFIX)
 app.include_router(maintenance.router, prefix=API_PREFIX)
 app.include_router(maintenance.pm_router, prefix=API_PREFIX)

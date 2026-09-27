@@ -267,7 +267,8 @@ async def seed() -> None:
         food_inventory: dict[str, FoodInventory] = {}
         for name, category, qty, unit, expiry, location, supplier, cost in food_defs:
             f = FoodInventory(name=name, category=category, qty=qty, unit=unit, batch=f"B-{len(food_inventory)+1:04d}",
-                               expiry=expiry, location=location, supplier_id=supplier.id, cost=cost)
+                               expiry=expiry, location=location, supplier_id=supplier.id, cost=cost,
+                               min=round(float(qty) * 0.3, 2), max=round(float(qty) * 0.5, 2))
             db.add(f)
             await db.flush()
             food_inventory[name] = f
@@ -379,16 +380,13 @@ async def seed() -> None:
         item_master: dict[str, ItemMaster] = {}
         for name, f in food_inventory.items():
             im = ItemMaster(name=name, code=f"FD-{len(item_master)+1:03d}", uom=f.unit, last_price=float(f.cost),
-                             preferred_supplier_id=f.supplier_id, min_stock=round(float(f.qty) * 0.3, 2),
-                             reorder_level=round(float(f.qty) * 0.5, 2), stock_type="food", stock_id=f.id)
+                             preferred_supplier_id=f.supplier_id, stock_type="food", stock_id=f.id)
             db.add(im)
             await db.flush()
             item_master[name] = im
         for name, i in inventory.items():
             im = ItemMaster(name=name, code=i.sku, uom=i.unit, last_price=float(i.last_price),
-                             preferred_supplier_id=i.supplier_id, min_stock=float(i.min),
-                             reorder_level=round((float(i.min) + float(i.max)) / 2, 2),
-                             stock_type="general", stock_id=i.id)
+                             preferred_supplier_id=i.supplier_id, stock_type="general", stock_id=i.id)
             db.add(im)
             await db.flush()
             item_master[name] = im

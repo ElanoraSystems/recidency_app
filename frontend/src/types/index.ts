@@ -164,6 +164,44 @@ export interface FoodInventoryItem {
   location: string | null;
   supplier_id: string | null;
   cost: number;
+  min: number;
+  max: number;
+}
+
+export interface FoodInventoryBatchEntry {
+  id: string;
+  batch_label: string | null;
+  qty: number;
+  expiry: string | null;
+  cost: number;
+  received_date: string;
+}
+
+export interface StockCountLineEntry {
+  id: string;
+  item_master_id: string;
+  item_name: string;
+  uom: string;
+  book_qty: number;
+  counted_qty: number | null;
+  unit_cost: number;
+}
+
+export interface StockCountDetail {
+  id: string;
+  date: string;
+  status: "Draft" | "Submitted";
+  counted_by: string | null;
+  notes: string | null;
+  lines: StockCountLineEntry[];
+}
+
+export interface StockCountSummary {
+  id: string;
+  date: string;
+  status: "Draft" | "Submitted";
+  item_count: number;
+  variance_value: number;
 }
 
 export interface StockTransferLine {
@@ -224,6 +262,16 @@ export interface Supplier {
   since: string | null;
 }
 
+export interface CreditNote {
+  id: string;
+  supplier_id: string;
+  po_id: string | null;
+  date: string;
+  reason: string;
+  amount: number;
+  notes: string | null;
+}
+
 export interface PurchaseRequest {
   id: string;
   item: string;
@@ -271,11 +319,11 @@ export interface ItemMasterEntry {
   uom: string;
   last_price: number;
   preferred_supplier_id: string | null;
-  min_stock: number;
-  reorder_level: number;
   active: boolean;
   stock_type: "food" | "general";
   stock_id: string;
+  category: string;
+  avg_price: number;
 }
 
 export interface UnitOfMeasureEntry {
@@ -344,15 +392,13 @@ export interface TaskItem {
   location_id: string | null;
   priority: string;
   due_date: string;
-  due_time: string | null;
-  start_time: string | null;
-  end_time: string | null;
   recurrence: string;
   recurrence_interval_days: number | null;
+  requires_verification: boolean;
   status: string;
   verified: boolean;
   photos: number;
-  checklist: { id: string; text: string; done: boolean }[];
+  checklist: { id: string; text: string; done: boolean; start_time: string | null; end_time: string | null }[];
   comments: { id: string; author_name: string; text: string; at: string }[];
 }
 

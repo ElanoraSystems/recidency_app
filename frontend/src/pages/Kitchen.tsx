@@ -1,15 +1,27 @@
-import { useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useCreate, useList } from "../api/hooks";
-import { BarChartH, catColor } from "../components/charts";
 import { Icon } from "../components/icons";
 import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { daysUntil, todayIso } from "../lib/date";
-import type { FoodInventoryItem, MealCategory, MealLogEntry, ProposedMenu, Recipe, RecipeIngredient, StockTransfer, UnitOfMeasureEntry, WasteLog, WasteReason, WeeklyMealPlan, WeeklyMealPlanEntry } from "../types";
+import type { FoodInventoryBatchEntry, FoodInventoryItem, MealCategory, MealLogEntry, ProposedMenu, Recipe, RecipeIngredient, StockTransfer, UnitOfMeasureEntry, WasteLog, WasteReason, WeeklyMealPlan, WeeklyMealPlanEntry } from "../types";
 
 const TABS = ["Meal Log", "Menu Proposals", "Staff Meal Plan", "Recipes", "Food Inventory", "Raw Material Transfer", "Waste Log"] as const;
+
+// A generic "Could not save" for a real 4xx/5xx and for a dead dev
+// server/network drop look identical to the user otherwise — worth telling
+// apart so "it's not working" doesn't always mean "the request was rejected."
+function saveErrorMessage(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    if (!err.response) return "Can't reach the server — check your connection and try again.";
+    const detail = (err.response.data as { detail?: string } | undefined)?.detail;
+    if (detail) return detail;
+  }
+  return "Could not save — please try again.";
+}
 
 // A plain <a href> won't carry the Bearer token — fetch as an authenticated
 // blob and open that instead (same pattern used for Documents downloads).
@@ -31,7 +43,7 @@ export function Kitchen() {
         subtitle="Recipes, food stock and meal production."
         action={
           tab === "Menu Proposals" ? <Button onClick={() => setModal(true)}>+ New Proposal</Button> :
-          tab === "Recipes" ? <Button onClick={() => setModal(true)}>+ New Recipe</Button> :
+          tab === "Recipes" ? <Link to="/kitchen/recipes/new"><Button>+ New Recipe</Button></Link> :
           tab === "Meal Log" ? <Button onClick={() => setModal(true)}>+ Log Meal</Button> :
           tab === "Raw Material Transfer" ? <Button onClick={() => setModal(true)}>+ Raw Material Transfer</Button> :
           tab === "Waste Log" ? <Button onClick={() => setModal(true)}>+ Log Waste</Button> : undefined
@@ -55,7 +67,7 @@ export function Kitchen() {
         ))}
       </div>
 
-      {tab === "Recipes" && <RecipesTab modal={modal} setModal={setModal} />}
+      {tab === "Recipes" && <RecipesTab />}
       {tab === "Food Inventory" && <FoodInventoryTab />}
       {tab === "Raw Material Transfer" && <RawMaterialTransferTab modal={modal} setModal={setModal} />}
       {tab === "Waste Log" && <WasteLogTab modal={modal} setModal={setModal} />}
@@ -66,17 +78,16 @@ export function Kitchen() {
   );
 }
 
-function RecipesTab({ modal, setModal }: { modal: boolean; setModal: (v: boolean) => void }) {
+function RecipesTab() {
   const { data, isLoading } = useList<Recipe>("recipes", "/kitchen/recipes");
-  const [detail, setDetail] = useState<Recipe | null>(null);
   if (isLoading) return <Spinner />;
   return (
     <div>
       {!data || data.length === 0 ? <EmptyState label="No recipes yet." /> : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {data.map((r) => (
-            <Card key={r.id} className="cursor-pointer" >
-              <div onClick={() => setDetail(r)}>
+            <Link key={r.id} to={`/kitchen/recipes/${r.id}`}>
+              <Card className="cursor-pointer">
                 <div className="mb-1 flex items-start justify-between gap-2">
                   <div className="font-display text-base font-semibold">{r.name}</div>
                   <Badge>{r.category}</Badge>
@@ -93,13 +104,11 @@ function RecipesTab({ modal, setModal }: { modal: boolean; setModal: (v: boolean
                   <span className="font-display text-xl font-semibold">KWD {r.cost.cost_per_portion.toFixed(3)}</span>
                   <span className="text-xs" style={{ color: "var(--ink-400)" }}>/ portion</span>
                 </div>
-              </div>
-            </Card>
+              </Card>
+            </Link>
           ))}
         </div>
       )}
-      {modal && <NewRecipeModal onClose={() => setModal(false)} />}
-      {detail && <RecipeDetailModal recipe={detail} onClose={() => setDetail(null)} />}
     </div>
   );
 }
@@ -122,66 +131,127 @@ function toPayload(i: RecipeIngredient): IngredientPayload {
   };
 }
 
-function RecipeDetailModal({ recipe: initialRecipe, onClose }: { recipe: Recipe; onClose: () => void }) {
+export function RecipeDetailPage() {
+  const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
-  const [recipe, setRecipe] = useState(initialRecipe);
+  const { data: loaded, isLoading } = useQuery<Recipe>({
+    queryKey: ["recipe", id],
+    queryFn: async () => (await api.get(`/kitchen/recipes/${id}`)).data,
+    enabled: !!id,
+  });
+  const [recipe, setRecipe] = useState<Recipe | null>(null);
+  useEffect(() => {
+    if (loaded && !recipe) setRecipe(loaded);
+  }, [loaded, recipe]);
   const { data: foodInventory } = useList<FoodInventoryItem>("food-inventory", "/kitchen/food-inventory");
   const { data: uomsRaw } = useList<UnitOfMeasureEntry>("units-of-measure", "/units-of-measure");
   const { data: allRecipes } = useList<Recipe>("recipes", "/kitchen/recipes");
   const uoms = [...(uomsRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
-  // A recipe can't reference itself as a sub-recipe (the server also
-  // blocks any transitive cycle) — filtering it out of the picker avoids
-  // an obvious dead-end pick before that round-trip even happens.
-  const subRecipeOptions = (allRecipes ?? []).filter((r) => r.id !== recipe.id).sort((a, b) => a.name.localeCompare(b.name));
   const [source, setSource] = useState<"stock" | "sub_recipe">("stock");
   const [ing, setIng] = useState<{ food_inventory_id: string; sub_recipe_id: string; qty: number; yield_pct: number; override_unit_id: string }>(
     { food_inventory_id: "", sub_recipe_id: "", qty: 0, yield_pct: 100, override_unit_id: "" }
   );
   const [error, setError] = useState<string | null>(null);
+  // Lets Enter (in the qty/yield fields) add the ingredient and jump focus
+  // straight back to the item picker, so adding several ingredients in a
+  // row doesn't need a mouse trip back up to the dropdown each time.
+  const stockPickerRef = useRef<HTMLSelectElement>(null);
+  const subRecipePickerRef = useRef<HTMLSelectElement>(null);
 
+  // raw_yield_g is never sent — the server derives it from the ingredient
+  // list itself (see kitchen.py's _compute_raw_yield_g), so it can't drift
+  // out of sync with what's actually in the recipe. prep_loss_pct and
+  // portion_size_g are the two stored fields; "after-cook weight" and
+  // "number of portions" are convenience alternate inputs that compute an
+  // equivalent value for one of these and pass it in explicitly, rather
+  // than going through recipe state — that state wouldn't be updated yet
+  // by the time a same-tick mutate() call reads it.
   const save = useMutation({
-    mutationFn: async (ingredients: IngredientPayload[]) =>
-      (await api.patch<Recipe>(`/kitchen/recipes/${recipe.id}`, {
-        name: recipe.name, category: recipe.category, allergens: recipe.allergens, notes: recipe.notes,
-        prep_loss_pct: recipe.prep_loss_pct, raw_yield_g: recipe.raw_yield_g, portion_size_g: recipe.portion_size_g,
-        cooking_method: recipe.cooking_method, method: recipe.method, ingredients,
+    mutationFn: async (patch: { ingredients: IngredientPayload[]; prep_loss_pct?: number; portion_size_g?: number }) =>
+      (await api.patch<Recipe>(`/kitchen/recipes/${recipe!.id}`, {
+        name: recipe!.name, category: recipe!.category, allergens: recipe!.allergens, notes: recipe!.notes,
+        prep_loss_pct: patch.prep_loss_pct ?? recipe!.prep_loss_pct,
+        portion_size_g: patch.portion_size_g ?? recipe!.portion_size_g,
+        cooking_method: recipe!.cooking_method, method: recipe!.method, ingredients: patch.ingredients,
       })).data,
     // Stays open and refreshes with the saved recipe — closing after every
     // single line item made it impossible to add more than one in a row.
     onSuccess: (updated) => { qc.invalidateQueries({ queryKey: ["recipes"] }); setRecipe(updated); setError(null); },
-    onError: (err: unknown) => {
-      const message = axios.isAxiosError(err) ? (err.response?.data as { detail?: string } | undefined)?.detail : undefined;
-      setError(message ?? "Could not save — please try again.");
-    },
+    onError: (err: unknown) => setError(saveErrorMessage(err)),
   });
+
+  if (isLoading || !recipe) return <Spinner />;
+
+  // A recipe can't reference itself as a sub-recipe (the server also
+  // blocks any transitive cycle) — filtering it out of the picker avoids
+  // an obvious dead-end pick before that round-trip even happens.
+  const subRecipeOptions = (allRecipes ?? []).filter((r) => r.id !== recipe.id).sort((a, b) => a.name.localeCompare(b.name));
 
   function addIngredient() {
     if (source === "stock" && !ing.food_inventory_id) return;
     if (source === "sub_recipe" && !ing.sub_recipe_id) return;
-    save.mutate([
-      ...recipe.ingredients.map(toPayload),
-      {
-        food_inventory_id: source === "stock" ? ing.food_inventory_id : null,
-        sub_recipe_id: source === "sub_recipe" ? ing.sub_recipe_id : null,
-        qty: ing.qty,
-        yield_pct: ing.yield_pct,
-        override_unit_id: source === "stock" ? (ing.override_unit_id || null) : null,
-      },
-    ]);
+    save.mutate({
+      ingredients: [
+        ...recipe!.ingredients.map(toPayload),
+        {
+          food_inventory_id: source === "stock" ? ing.food_inventory_id : null,
+          sub_recipe_id: source === "sub_recipe" ? ing.sub_recipe_id : null,
+          qty: ing.qty,
+          yield_pct: ing.yield_pct,
+          override_unit_id: source === "stock" ? (ing.override_unit_id || null) : null,
+        },
+      ],
+    });
     setIng({ food_inventory_id: "", sub_recipe_id: "", qty: 0, yield_pct: 100, override_unit_id: "" });
+    (source === "stock" ? stockPickerRef : subRecipePickerRef).current?.focus();
+  }
+  function handleQtyKeyDown(e: React.KeyboardEvent) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (source === "stock" ? ing.food_inventory_id : ing.sub_recipe_id) addIngredient();
   }
   function removeIngredient(idx: number) {
-    save.mutate(recipe.ingredients.filter((_, i) => i !== idx).map(toPayload));
+    save.mutate({ ingredients: recipe!.ingredients.filter((_, i) => i !== idx).map(toPayload) });
+  }
+  function commitPrepLoss(pct: number) {
+    const clamped = Math.max(0, Math.min(100, pct));
+    setRecipe((r) => (r ? { ...r, prep_loss_pct: clamped } : r));
+    save.mutate({ ingredients: recipe!.ingredients.map(toPayload), prep_loss_pct: clamped });
+  }
+  function commitAfterCookWeight(weightG: number) {
+    if (!recipe!.raw_yield_g || !weightG) return;
+    const pct = Math.max(0, Math.min(100, Math.round((1 - weightG / recipe!.raw_yield_g) * 10000) / 100));
+    setRecipe((r) => (r ? { ...r, prep_loss_pct: pct } : r));
+    save.mutate({ ingredients: recipe!.ingredients.map(toPayload), prep_loss_pct: pct });
+  }
+  function commitPortionSize(size: number) {
+    setRecipe((r) => (r ? { ...r, portion_size_g: size } : r));
+    save.mutate({ ingredients: recipe!.ingredients.map(toPayload), portion_size_g: size });
+  }
+  function commitNumberOfPortions(portions: number) {
+    if (!portions || !recipe!.cost.final_yield_g) return;
+    const size = Math.round(recipe!.cost.final_yield_g / portions);
+    setRecipe((r) => (r ? { ...r, portion_size_g: size } : r));
+    save.mutate({ ingredients: recipe!.ingredients.map(toPayload), portion_size_g: size });
   }
   const selectedStock = foodInventory?.find((f) => f.id === ing.food_inventory_id);
+  // Mirrors app/services/units.py's family check — only offer an override
+  // unit the backend will actually accept, instead of letting the user
+  // pick e.g. "kg" for a "units"-tracked item and only finding out it's
+  // rejected after hitting Add.
+  const stockUom = uoms.find((u) => u.label === selectedStock?.unit);
+  const compatibleUoms = stockUom
+    ? uoms.filter((u) => u.label !== stockUom.label && (u.base_unit_id ?? u.id) === (stockUom.base_unit_id ?? stockUom.id))
+    : [];
 
   return (
-    <Modal title={recipe.name} onClose={onClose} wide>
+    <div>
+      <Link to="/kitchen" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Kitchen</Link>
+      <PageHeader title={recipe.name} />
       <div className="flex flex-col gap-4 text-[13px]">
         <div className="flex flex-wrap items-center gap-2">
           <Badge>{recipe.category}</Badge>
           <Badge>{recipe.cooking_method || "—"}</Badge>
-          <Badge>{recipe.portion_size_g} g plated</Badge>
           {recipe.allergens.length > 0 ? (
             recipe.allergens.map((a) => <Badge key={a} tone="warning">{a}</Badge>)
           ) : (
@@ -190,10 +260,29 @@ function RecipeDetailModal({ recipe: initialRecipe, onClose }: { recipe: Recipe;
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatTile label="Raw Yield" value={recipe.raw_yield_g} suffix="g" />
-          <StatTile label="Prep Loss" value={`${recipe.prep_loss_pct}%`} progressColor="var(--status-warning)" />
-          <StatTile label="Usable Yield" value={recipe.cost.final_yield_g} suffix="g" sub={`${recipe.cost.portions} portions`} progressColor="var(--status-good)" />
+          <StatTile
+            label="Raw Yield" value={recipe.raw_yield_g} suffix="g"
+            sub="Auto, from ingredients below"
+          />
+          <EditableTile
+            label="Prep Loss (%)" value={recipe.prep_loss_pct}
+            onCommit={commitPrepLoss}
+          />
+          <EditableTile
+            label="After-Cook Weight" suffix="g" value={recipe.cost.final_yield_g}
+            onCommit={commitAfterCookWeight}
+            sub="Alternate to Prep Loss"
+          />
           <StatTile label="Cost / Portion" value={`KWD ${recipe.cost.cost_per_portion.toFixed(3)}`} sub={`Recipe total KWD ${recipe.cost.total_cost.toFixed(3)}`} />
+          <EditableTile
+            label="Portion Size (g)" value={recipe.portion_size_g}
+            onCommit={commitPortionSize}
+          />
+          <EditableTile
+            label="Number of Portions" value={recipe.cost.portions}
+            onCommit={commitNumberOfPortions}
+            sub="Alternate to Portion Size"
+          />
         </div>
 
         <div>
@@ -236,7 +325,7 @@ function RecipeDetailModal({ recipe: initialRecipe, onClose }: { recipe: Recipe;
           {source === "stock" ? (
             <>
               <label className="flex min-w-[200px] flex-1 flex-col gap-1 text-[13px] font-medium">Stock item
-                <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                <select ref={stockPickerRef} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
                   value={ing.food_inventory_id} onChange={(e) => setIng((s) => ({ ...s, food_inventory_id: e.target.value }))}>
                   <option value="">Select stock item…</option>
                   {foodInventory?.map((f) => <option key={f.id} value={f.id}>{f.name} (KWD {f.cost.toFixed(3)}/{f.unit})</option>)}
@@ -244,20 +333,20 @@ function RecipeDetailModal({ recipe: initialRecipe, onClose }: { recipe: Recipe;
               </label>
               <label className="flex w-20 flex-col gap-1 text-[13px] font-medium">Qty
                 <input type="number" step="any" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                  value={ing.qty} onChange={(e) => setIng((s) => ({ ...s, qty: Number(e.target.value) }))} />
+                  value={ing.qty} onChange={(e) => setIng((s) => ({ ...s, qty: Number(e.target.value) }))} onKeyDown={handleQtyKeyDown} />
               </label>
               <label className="flex w-24 flex-col gap-1 text-[13px] font-medium">Unit
                 <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
                   value={ing.override_unit_id} onChange={(e) => setIng((s) => ({ ...s, override_unit_id: e.target.value }))}>
                   <option value="">{selectedStock?.unit ?? "unit"} (default)</option>
-                  {uoms.filter((u) => u.label !== selectedStock?.unit).map((u) => <option key={u.id} value={u.id}>{u.label}</option>)}
+                  {compatibleUoms.map((u) => <option key={u.id} value={u.id}>{u.label}</option>)}
                 </select>
               </label>
             </>
           ) : (
             <>
               <label className="flex min-w-[200px] flex-1 flex-col gap-1 text-[13px] font-medium">Sub-recipe
-                <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                <select ref={subRecipePickerRef} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
                   value={ing.sub_recipe_id} onChange={(e) => setIng((s) => ({ ...s, sub_recipe_id: e.target.value }))}>
                   <option value="">Select recipe…</option>
                   {subRecipeOptions.map((r) => (
@@ -267,13 +356,13 @@ function RecipeDetailModal({ recipe: initialRecipe, onClose }: { recipe: Recipe;
               </label>
               <label className="flex w-24 flex-col gap-1 text-[13px] font-medium">Qty (g)
                 <input type="number" step="any" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                  value={ing.qty} onChange={(e) => setIng((s) => ({ ...s, qty: Number(e.target.value) }))} />
+                  value={ing.qty} onChange={(e) => setIng((s) => ({ ...s, qty: Number(e.target.value) }))} onKeyDown={handleQtyKeyDown} />
               </label>
             </>
           )}
           <label className="flex w-20 flex-col gap-1 text-[13px] font-medium">Yield %
             <input type="number" min={1} max={100} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={ing.yield_pct} onChange={(e) => setIng((s) => ({ ...s, yield_pct: Number(e.target.value) }))} />
+              value={ing.yield_pct} onChange={(e) => setIng((s) => ({ ...s, yield_pct: Number(e.target.value) }))} onKeyDown={handleQtyKeyDown} />
           </label>
           <Button variant="secondary" onClick={addIngredient}
             disabled={save.isPending || (source === "stock" ? !ing.food_inventory_id : !ing.sub_recipe_id)}>
@@ -318,30 +407,68 @@ function RecipeDetailModal({ recipe: initialRecipe, onClose }: { recipe: Recipe;
           Ingredients deduct from inventory automatically when this dish is logged as served.
         </div>
       </div>
-    </Modal>
+    </div>
   );
 }
 
-function NewRecipeModal({ onClose }: { onClose: () => void }) {
+// A StatTile that's also a number input — saves on blur. The displayed
+// value only ever reflects the server's own recipe state (never a bare
+// local edit that might not have actually saved), so a local text buffer
+// syncs from `value` on every prop change rather than being the source of
+// truth itself.
+function EditableTile({
+  label, value, suffix, sub, onCommit,
+}: { label: string; value: number; suffix?: string; sub?: string; onCommit: (v: number) => void }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  return (
+    <Card className="flex flex-col gap-1.5">
+      <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--ink-400)" }}>{label}</span>
+      <div className="flex items-baseline gap-1">
+        <input
+          type="number" step="any"
+          className="w-20 rounded-lg border px-2 py-0.5 font-display text-xl font-semibold"
+          style={{ borderColor: "var(--border-strong)" }}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={() => { const n = Number(text); if (!Number.isNaN(n)) onCommit(n); }}
+        />
+        {suffix && <span className="text-xs" style={{ color: "var(--ink-400)" }}>{suffix}</span>}
+      </div>
+      {sub && <span className="text-[11px]" style={{ color: "var(--ink-400)" }}>{sub}</span>}
+    </Card>
+  );
+}
+
+export function NewRecipePage() {
+  const navigate = useNavigate();
   const create = useCreate<Recipe>("recipes", "/kitchen/recipes");
   const [form, setForm] = useState({
-    name: "", category: "Dinner", portion_size_g: 250, raw_yield_g: 1000, prep_loss_pct: 8,
-    cooking_method: "", allergens: "", method: "", notes: "",
+    name: "", category: "Dinner",
+    allergens: "", method: "", notes: "",
   });
+  const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await create.mutateAsync({
-      ...form,
-      allergens: form.allergens ? form.allergens.split(",").map((s) => s.trim()).filter(Boolean) : [],
-      ingredients: [],
-    } as never);
-    onClose();
+    setError(null);
+    try {
+      const created = await create.mutateAsync({
+        ...form,
+        allergens: form.allergens ? form.allergens.split(",").map((s) => s.trim()).filter(Boolean) : [],
+        ingredients: [],
+      } as never);
+      navigate(`/kitchen/recipes/${created.id}`);
+    } catch (err: unknown) {
+      setError(saveErrorMessage(err));
+    }
   }
 
   return (
-    <Modal title="New recipe" onClose={onClose} wide>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+    <div>
+      <Link to="/kitchen" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Kitchen</Link>
+      <PageHeader title="New recipe" />
+      <form onSubmit={onSubmit} className="flex flex-col gap-3 max-w-2xl">
         <label className="flex flex-col gap-1 text-[13px] font-medium">Recipe name
           <input required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
             value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} />
@@ -352,22 +479,6 @@ function NewRecipeModal({ onClose }: { onClose: () => void }) {
               value={form.category} onChange={(e) => setForm((s) => ({ ...s, category: e.target.value }))}>
               {["Breakfast", "Lunch", "Dinner", "Snacks", "Special Meals", "Events"].map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
-          </label>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Portion size (g/ml)
-            <input type="number" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={form.portion_size_g} onChange={(e) => setForm((s) => ({ ...s, portion_size_g: Number(e.target.value) }))} />
-          </label>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Raw yield before prep (g/ml)
-            <input type="number" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={form.raw_yield_g} onChange={(e) => setForm((s) => ({ ...s, raw_yield_g: Number(e.target.value) }))} />
-          </label>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Preparation loss (%)
-            <input type="number" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={form.prep_loss_pct} onChange={(e) => setForm((s) => ({ ...s, prep_loss_pct: Number(e.target.value) }))} />
-          </label>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Cooking method
-            <input className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={form.cooking_method} onChange={(e) => setForm((s) => ({ ...s, cooking_method: e.target.value }))} />
           </label>
           <label className="flex flex-col gap-1 text-[13px] font-medium">Allergens
             <input placeholder="e.g. Fish, Dairy" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
@@ -382,15 +493,25 @@ function NewRecipeModal({ onClose }: { onClose: () => void }) {
           <textarea placeholder="Optional notes for kitchen staff" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
             value={form.notes} onChange={(e) => setForm((s) => ({ ...s, notes: e.target.value }))} />
         </label>
-        <p className="text-[12px]" style={{ color: "var(--ink-400)" }}>Add ingredient line items after saving, from the recipe detail view, to complete costing.</p>
-        <Button type="submit" disabled={create.isPending}>{create.isPending ? "Saving..." : "Save Recipe"}</Button>
+        <p className="text-[12px]" style={{ color: "var(--ink-400)" }}>
+          On the next screen: add raw material line items (item, qty, unit, cost, yield) — raw yield is calculated
+          automatically from those quantities. Then set preparation loss (or the after-cook weight directly) and
+          portioning.
+        </p>
+        {error && (
+          <div className="rounded-lg px-3 py-2 text-[12.5px]" style={{ background: "var(--status-critical-bg)", color: "var(--status-critical)" }}>
+            {error}
+          </div>
+        )}
+        <Button type="submit" disabled={create.isPending}>{create.isPending ? "Saving..." : "Save Recipe & Add Ingredients"}</Button>
       </form>
-    </Modal>
+    </div>
   );
 }
 
 function FoodInventoryTab() {
   const { data, isLoading } = useList<FoodInventoryItem>("food-inventory", "/kitchen/food-inventory");
+  const [batchesFor, setBatchesFor] = useState<FoodInventoryItem | null>(null);
   if (isLoading) return <Spinner />;
   if (!data || data.length === 0) return <EmptyState label="No food stock yet." />;
 
@@ -412,7 +533,7 @@ function FoodInventoryTab() {
         {data.map((f) => {
           const du = f.expiry ? daysUntil(f.expiry) : null;
           return (
-            <tr key={f.id}>
+            <tr key={f.id} className="cursor-pointer" onClick={() => setBatchesFor(f)}>
               <Td className="font-medium">{f.name}</Td>
               <Td>{f.category}</Td>
               <Td>{f.qty} {f.unit}</Td>
@@ -431,7 +552,40 @@ function FoodInventoryTab() {
         })}
       </tbody>
       </Table>
+      {batchesFor && <FoodBatchesModal item={batchesFor} onClose={() => setBatchesFor(null)} />}
     </div>
+  );
+}
+
+function FoodBatchesModal({ item, onClose }: { item: FoodInventoryItem; onClose: () => void }) {
+  const { data: batches, isLoading } = useQuery<FoodInventoryBatchEntry[]>({
+    queryKey: ["food-inventory-batches", item.id],
+    queryFn: async () => (await api.get(`/kitchen/food-inventory/${item.id}/batches`)).data,
+  });
+
+  return (
+    <Modal title={`${item.name} — batches`} onClose={onClose}>
+      {isLoading ? (
+        <Spinner />
+      ) : !batches || batches.length === 0 ? (
+        <EmptyState label="No batches on record — this item's stock predates FEFO tracking or was set directly." />
+      ) : (
+        <Table>
+          <thead><tr><Th>Batch</Th><Th>Qty</Th><Th>Expiry</Th><Th>Cost/unit</Th><Th>Received</Th></tr></thead>
+          <tbody>
+            {batches.map((b) => (
+              <tr key={b.id}>
+                <Td>{b.batch_label ?? "—"}</Td>
+                <Td>{b.qty} {item.unit}</Td>
+                <Td>{b.expiry ?? "—"}</Td>
+                <Td>KWD {b.cost.toFixed(3)}</Td>
+                <Td>{b.received_date}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </Modal>
   );
 }
 
@@ -775,57 +929,13 @@ function NewWasteLogModal({ foodInventory, onClose }: { foodInventory: FoodInven
 
 function MealLogTab({ modal, setModal }: { modal: boolean; setModal: (v: boolean) => void }) {
   const { data: mealLog, isLoading } = useList<MealLogEntry>("meal-log", "/kitchen/meal-log");
-  const { data: mealCategoriesRaw } = useList<MealCategory>("meal-categories", "/kitchen/meal-categories");
-  // The generic list endpoint always sorts descending, so re-sort A-Z here
-  // rather than showing categories in a confusing, effectively-random order.
-  const mealCategories = [...(mealCategoriesRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
 
   if (isLoading) return <Spinner />;
-
-  const today = todayIso();
-  const monthPrefix = today.slice(0, 7);
-  const todayLogs = (mealLog ?? []).filter((m) => m.date === today);
-  const monthLogs = (mealLog ?? []).filter((m) => m.date.slice(0, 7) === monthPrefix);
-  const todayValue = todayLogs.reduce((s, m) => s + m.qty * m.unit_cost, 0);
-  const monthValue = monthLogs.reduce((s, m) => s + m.qty * m.unit_cost, 0);
-  const todayServed = todayLogs.reduce((s, m) => s + m.qty, 0);
-  const monthServed = monthLogs.reduce((s, m) => s + m.qty, 0);
-  const avgCost = monthServed ? monthValue / monthServed : 0;
-
-  const byCat: Record<string, number> = {};
-  for (const m of monthLogs) byCat[m.category] = (byCat[m.category] ?? 0) + m.qty * m.unit_cost;
-  const catKeys = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a]);
-  const catRows = catKeys.map((c, i) => ({ label: c, value: byCat[c], color: catColor(i) }));
 
   const sorted = [...(mealLog ?? [])].sort((a, b) => b.date.localeCompare(a.date));
 
   return (
     <div>
-      <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatTile label="Today's Consumption Value" icon="scale" value={`KWD ${todayValue.toFixed(2)}`} sub={`${todayServed} meals served today`} />
-        <StatTile label="This Month's Consumption Value" icon="scale" value={`KWD ${monthValue.toFixed(2)}`} sub={`${monthServed} meals served this month`} />
-        <StatTile label="Meals Served Today" icon="kitchen" value={todayServed} sub={`${todayLogs.length} entries logged`} />
-        <StatTile label="Avg Recipe Cost / Meal" icon="expenses" value={`KWD ${avgCost.toFixed(3)}`} sub="Month to date" />
-      </div>
-      <p className="mb-4 text-[12px]" style={{ color: "var(--ink-400)" }}>
-        Consumption value is the recipe-costed value of meals served — useful for tracking usage and portion control, but it is not the residence's food expense (that's purchases, tracked under Purchasing).
-      </p>
-
-      <div className="mb-4 grid gap-4 lg:grid-cols-2">
-        <Card>
-          <h3 className="mb-3 text-[15px] font-semibold">Consumption value by category — this month</h3>
-          {catRows.length === 0 ? <EmptyState label="No meals logged this month yet." /> : <BarChartH rows={catRows} fmt={(v) => `KWD ${v.toFixed(2)}`} />}
-        </Card>
-        <Card>
-          <h3 className="mb-3 text-[15px] font-semibold">Meal categories tracked</h3>
-          <div className="flex flex-wrap gap-2">
-            {mealCategories.length === 0 ? (
-              <span className="text-xs" style={{ color: "var(--ink-400)" }}>None configured — add some in Settings → Meal Categories.</span>
-            ) : mealCategories.map((c) => <Badge key={c.id}>{c.label}</Badge>)}
-          </div>
-        </Card>
-      </div>
-
       {!mealLog || mealLog.length === 0 ? (
         <EmptyState label="No meals logged yet." />
       ) : (

@@ -16,7 +16,12 @@ class TaskTemplate(Base, UUIDPKMixin):
     recurrence: Mapped[str] = mapped_column(String(30))
     # Only meaningful when recurrence == "Custom" — mirrors Task.recurrence_interval_days.
     recurrence_interval_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Each entry is {"text": str, "start_time": "HH:MM:SS" | None, "end_time": "HH:MM:SS" | None}.
+    # Timing lives per checklist item, not once for the whole template/task —
+    # a single time block doesn't fit a checklist covering several distinct
+    # activities. Carried onto every TaskChecklistItem a spawned task gets.
     items: Mapped[list] = mapped_column(JSONB, default=list)
+    requires_verification: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class TaskCategory(Base, UUIDPKMixin):
@@ -42,17 +47,14 @@ class Task(Base, UUIDPKMixin, TimestampMixin):
     )
     priority: Mapped[str] = mapped_column(String(20), default="Medium")
     due_date: Mapped[date] = mapped_column(Date)
-    due_time: Mapped[time | None] = mapped_column(Time, nullable=True)
-    # Optional scheduled block, distinct from due_time (a reminder-style single
-    # point in time). When both are set, create_task() rejects any overlap
-    # with the same assignee's other scheduled tasks on the same day.
-    start_time: Mapped[time | None] = mapped_column(Time, nullable=True)
-    end_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     recurrence: Mapped[str] = mapped_column(String(30), default="One-time")
     # Only meaningful when recurrence == "Custom" — Daily/Weekly/Monthly have
     # a fixed, implied interval. See approvals.py's task_review decision for
     # where the next occurrence actually gets created.
     recurrence_interval_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # False lets a staff member's own "Completed" stand as done, no
+    # supervisor review required — see tasks.py's update_task_status.
+    requires_verification: Mapped[bool] = mapped_column(Boolean, default=True)
     status: Mapped[str] = mapped_column(String(20), default="Pending")
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     photos: Mapped[int] = mapped_column(Integer, default=0)
@@ -64,6 +66,11 @@ class TaskChecklistItem(Base, UUIDPKMixin):
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"))
     text: Mapped[str] = mapped_column(String(200))
     done: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Optional scheduled block for this specific item — moved down from the
+    # task level since a task's checklist can cover several activities at
+    # different times of day. See tasks.py's _check_overlap.
+    start_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    end_time: Mapped[time | None] = mapped_column(Time, nullable=True)
 
 
 class TaskComment(Base, UUIDPKMixin):

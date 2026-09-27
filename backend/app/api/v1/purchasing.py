@@ -7,10 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_module
+from app.api.v1.kitchen import _recompute_food_rollup
 from app.crud.activity import log_activity
 from app.db.session import get_db
 from app.models.finance import Expense, ResidenceSettings
-from app.models.kitchen import FoodInventory
+from app.models.kitchen import FoodInventory, FoodInventoryBatch
 from app.models.purchasing import (
     Grn,
     GrnLine,
@@ -236,8 +237,6 @@ class ItemMasterIn(BaseModel):
     uom: str
     last_price: float = 0
     preferred_supplier_id: uuid.UUID | None = None
-    min_stock: float = 0
-    reorder_level: float = 0
     active: bool = True
     stock_type: str  # food | general
     stock_id: uuid.UUID
@@ -246,9 +245,30 @@ class ItemMasterIn(BaseModel):
 class ItemMasterOut(ItemMasterIn):
     id: uuid.UUID
     code: str
+    # Not columns on item_master — resolved live off the linked stock record
+    # (food_inventory.category/.cost or inventory.category/.avg_price) so
+    # category and par levels have exactly one source of truth: Stock.
+    category: str
+    avg_price: float
 
     class Config:
         from_attributes = True
+
+
+async def _stock_lookup(db: AsyncSession, stock_type: str, stock_id: uuid.UUID) -> tuple[str, float]:
+    if stock_type == "food":
+        stock = await db.get(FoodInventory, stock_id)
+        return (stock.category, float(stock.cost)) if stock else ("—", 0.0)
+    stock = await db.get(Inventory, stock_id)
+    return (stock.category, float(stock.avg_price)) if stock else ("—", 0.0)
+
+
+def _item_master_out(item: ItemMaster, category: str, avg_price: float) -> ItemMasterOut:
+    return ItemMasterOut(
+        id=item.id, code=item.code, name=item.name, uom=item.uom, last_price=item.last_price,
+        preferred_supplier_id=item.preferred_supplier_id, active=item.active,
+        stock_type=item.stock_type, stock_id=item.stock_id, category=category, avg_price=avg_price,
+    )
 
 
 async def _next_item_code(db: AsyncSession) -> str:
@@ -269,13 +289,54 @@ async def _next_item_code(db: AsyncSession) -> str:
     return "ITM-1001"
 
 
+@item_master_router.get("", response_model=list[ItemMasterOut])
+async def list_item_master(db: AsyncSession = Depends(get_db), _user: User = Depends(purchasing_access)):
+    """Hand-written (not generic CRUD) — needs to join each row to its stock
+    record for category/avg_price, which generic_routes.py's factory can't
+    express. Registered ahead of that module's router inclusion in main.py
+    so this shadows it for GET; ItemMaster carries no generic registration
+    at all anymore (see generic_routes.py)."""
+    items = (await db.execute(select(ItemMaster).order_by(ItemMaster.name))).scalars().all()
+    food_ids = {i.stock_id for i in items if i.stock_type == "food"}
+    general_ids = {i.stock_id for i in items if i.stock_type == "general"}
+    food_rows = {}
+    if food_ids:
+        result = await db.execute(select(FoodInventory).where(FoodInventory.id.in_(food_ids)))
+        food_rows = {r.id: r for r in result.scalars().all()}
+    general_rows = {}
+    if general_ids:
+        result = await db.execute(select(Inventory).where(Inventory.id.in_(general_ids)))
+        general_rows = {r.id: r for r in result.scalars().all()}
+
+    out = []
+    for item in items:
+        stock = (food_rows if item.stock_type == "food" else general_rows).get(item.stock_id)
+        if stock is None:
+            out.append(_item_master_out(item, "—", 0.0))
+        else:
+            avg_price = float(stock.cost if item.stock_type == "food" else stock.avg_price)
+            out.append(_item_master_out(item, stock.category, avg_price))
+    return out
+
+
+@item_master_router.get("/{item_id}", response_model=ItemMasterOut)
+async def get_item_master(
+    item_id: uuid.UUID, db: AsyncSession = Depends(get_db), _user: User = Depends(purchasing_access)
+):
+    item = await db.get(ItemMaster, item_id)
+    if not item:
+        raise HTTPException(404, "Item master entry not found")
+    category, avg_price = await _stock_lookup(db, item.stock_type, item.stock_id)
+    return _item_master_out(item, category, avg_price)
+
+
 @item_master_router.post("", response_model=ItemMasterOut, status_code=201)
 async def create_item_master(
     payload: ItemMasterIn, db: AsyncSession = Depends(get_db), user: User = Depends(purchasing_access)
 ):
     """Hand-written (not generic CRUD) purely so `code` is always
-    server-generated — see ItemMaster's generic router registration in
-    generic_routes.py (read_only=True, GET only) for why this lives here."""
+    server-generated — see ItemMaster having no generic router registration
+    at all (generic_routes.py) for why every item-master route lives here."""
     item = ItemMaster(
         code=await _next_item_code(db),
         **payload.model_dump(),
@@ -284,7 +345,35 @@ async def create_item_master(
     await log_activity(db, user, "Added item master entry", f"{payload.name} ({item.code})")
     await db.commit()
     await db.refresh(item)
-    return item
+    category, avg_price = await _stock_lookup(db, item.stock_type, item.stock_id)
+    return _item_master_out(item, category, avg_price)
+
+
+class ItemMasterPatch(BaseModel):
+    # stock_type/stock_id aren't here — repointing an item master entry at a
+    # different stock record is a much bigger operation than editing its
+    # catalog fields, and nothing asked for it.
+    name: str | None = None
+    uom: str | None = None
+    last_price: float | None = None
+    preferred_supplier_id: uuid.UUID | None = None
+    active: bool | None = None
+
+
+@item_master_router.patch("/{item_id}", response_model=ItemMasterOut)
+async def update_item_master(
+    item_id: uuid.UUID, payload: ItemMasterPatch, db: AsyncSession = Depends(get_db), user: User = Depends(purchasing_access)
+):
+    item = await db.get(ItemMaster, item_id)
+    if not item:
+        raise HTTPException(404, "Item master entry not found")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(item, key, value)
+    await log_activity(db, user, "Updated item master entry", f"{item.name} ({item.code})")
+    await db.commit()
+    await db.refresh(item)
+    category, avg_price = await _stock_lookup(db, item.stock_type, item.stock_id)
+    return _item_master_out(item, category, avg_price)
 
 
 @router.get("/purchase-orders", response_model=list[PurchaseOrderOut])
@@ -407,6 +496,11 @@ class GrnLineIn(BaseModel):
     # itself is never rewritten — it stays the historical record of what
     # was ordered; this is what actually happened at receiving.
     actual_price: float | None = None
+    # Food items only — creates a new batch lot for FEFO tracking instead of
+    # blending into a single stock figure. Ignored for general (non-food)
+    # PO lines, which have no batch ledger.
+    expiry: date | None = None
+    batch_label: str | None = None
 
 
 class GrnIn(BaseModel):
@@ -514,16 +608,22 @@ async def receive_goods(
                 if item.stock_type == "food":
                     stock = await db.get(FoodInventory, item.stock_id)
                     if stock:
-                        # True moving-average cost: blend the value of what
-                        # was already on the shelf with the value of this
-                        # receipt, so cost reflects stock bought at
-                        # different prices over time rather than just the
-                        # most recent one.
-                        old_value = float(stock.qty) * float(stock.cost)
-                        new_value = line_in.received_qty * actual_price
-                        new_qty = float(stock.qty) + line_in.received_qty
-                        stock.cost = (old_value + new_value) / new_qty if new_qty > 0 else actual_price
-                        stock.qty = new_qty
+                        # Each receipt is its own batch lot (own cost,
+                        # own expiry) rather than blended into one figure —
+                        # lets consumption draw FEFO instead of averaging
+                        # away which stock is actually closest to expiry.
+                        db.add(
+                            FoodInventoryBatch(
+                                food_inventory_id=stock.id,
+                                batch_label=line_in.batch_label,
+                                qty=line_in.received_qty,
+                                expiry=line_in.expiry,
+                                cost=actual_price,
+                                received_date=date.today(),
+                            )
+                        )
+                        await db.flush()
+                        await _recompute_food_rollup(db, stock.id)
                 else:
                     stock = await db.get(Inventory, item.stock_id)
                     if stock:
