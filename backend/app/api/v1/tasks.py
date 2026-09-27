@@ -243,6 +243,17 @@ async def list_tasks(db: AsyncSession = Depends(get_db), _user: User = Depends(t
     return [await _task_out(db, t) for t in result.scalars().all()]
 
 
+@router.delete("/{task_id}", status_code=204)
+async def delete_task(
+    task_id: uuid.UUID, db: AsyncSession = Depends(get_db), _user: User = Depends(tasks_access)
+):
+    task = await db.get(Task, task_id)
+    if not task:
+        raise HTTPException(404, "Task not found")
+    await db.delete(task)
+    await db.commit()
+
+
 @router.post("", response_model=TaskOut, status_code=201)
 async def create_task(
     payload: TaskIn, db: AsyncSession = Depends(get_db), _user: User = Depends(tasks_access)

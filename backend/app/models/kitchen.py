@@ -130,12 +130,10 @@ class MealLog(Base, UUIDPKMixin, TimestampMixin):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
-    # Who/what the meal was produced for, e.g. "Villa Security Team" or "Al
-    # Sabah family dinner — 12 guests". `category` is a coarse reporting
-    # bucket ("Staff Meals", "Events"), not an audience — this is the field
-    # an invoice PDF actually prints as "Produced for:". Falls back to
-    # showing `category` alone when blank.
-    produced_for: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Owner-managed list (Settings -> Cost Centers), e.g. "Villa Security
+    # Team" or "Al Sabah Family". Falls back to showing `category` alone
+    # when blank.
+    cost_center: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
 
 class ConsumptionLog(Base, UUIDPKMixin):
@@ -194,6 +192,15 @@ class WasteReason(Base, UUIDPKMixin):
     dropdown on the Kitchen Waste Log form."""
 
     __tablename__ = "waste_reasons"
+
+    label: Mapped[str] = mapped_column(String(60), unique=True)
+
+
+class CostCenter(Base, UUIDPKMixin):
+    """Owner-managed list (Settings -> Cost Centers) driving the cost
+    center dropdown on the Kitchen Meal Log form."""
+
+    __tablename__ = "cost_centers"
 
     label: Mapped[str] = mapped_column(String(60), unique=True)
 

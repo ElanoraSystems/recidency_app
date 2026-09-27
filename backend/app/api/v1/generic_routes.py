@@ -5,7 +5,7 @@ from app.crud.generic import make_router
 from app.models.facilities import Area, AreaType, Inspection, MaintenanceRequest, PmSchedule, Vehicle, VehicleHistory
 from app.models.family_guests import Event, FamilyMember, Guest
 from app.models.finance import Document, Expense
-from app.models.kitchen import FoodInventory, MealCategory, WasteReason
+from app.models.kitchen import CostCenter, FoodInventory, MealCategory, WasteReason
 from app.models.people import Attendance, LeaveRequest, Shift, ShiftPattern
 from app.models.purchasing import CreditNote, Inventory, Supplier, UnitOfMeasure
 from app.models.tasks import GardenTask, PoolLog, TaskCategory, TaskTemplate
@@ -50,6 +50,7 @@ routers = [
     make_router(LeaveRequest, prefix="/leave-requests", tag="people", module="people", order_by="from_date"),
     make_router(MealCategory, prefix="/kitchen/meal-categories", tag="kitchen", module="kitchen", order_by="label"),
     make_router(WasteReason, prefix="/kitchen/waste-reasons", tag="kitchen", module="kitchen", order_by="label"),
+    make_router(CostCenter, prefix="/kitchen/cost-centers", tag="kitchen", module="kitchen", order_by="label"),
     make_router(Event, prefix="/events", tag="events", module="events", order_by="date"),
     make_router(TaskTemplate, prefix="/task-templates", tag="tasks", module="tasks"),
     make_router(TaskCategory, prefix="/task-categories", tag="tasks", module="tasks", order_by="label"),

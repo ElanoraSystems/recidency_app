@@ -8,14 +8,14 @@ import { AttachmentsPanel } from "../components/AttachmentsPanel";
 import { Icon } from "../components/icons";
 import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { NAV } from "../layout/nav";
-import type { Area, Asset, MealCategory, ResidenceSettingsInfo, StaffMember, TaskCategory, UnitOfMeasureEntry, WasteReason } from "../types";
+import type { Area, Asset, CostCenter, MealCategory, ResidenceSettingsInfo, StaffMember, TaskCategory, UnitOfMeasureEntry, WasteReason } from "../types";
 
 interface RoleRow { id: string; key: string; label: string; modules: string[] }
 interface FamilyAccountRow { id: string; name: string | null; email: string | null; relation: string; active: boolean; modules: string[] }
 
 const TABS = [
   "Residence", "Asset Register", "Family Access", "Roles & Access",
-  "Meal Categories", "Task Categories", "Waste Reasons", "Units of Measure",
+  "Meal Categories", "Task Categories", "Waste Reasons", "Cost Centers", "Units of Measure",
   "Notification Preferences",
 ] as const;
 
@@ -73,6 +73,12 @@ export function Settings() {
         <SimpleLabelListTab<WasteReason>
           isOwner={isOwner} queryKey="waste-reasons" endpoint="/kitchen/waste-reasons" itemNoun="waste reason"
           helperText="Define the reasons available when logging spoiled or wasted stock in Kitchen > Waste Log."
+        />
+      )}
+      {tab === "Cost Centers" && (
+        <SimpleLabelListTab<CostCenter>
+          isOwner={isOwner} queryKey="cost-centers" endpoint="/kitchen/cost-centers" itemNoun="cost center"
+          helperText="Define the cost centers available when logging a meal in the Kitchen module."
         />
       )}
       {tab === "Units of Measure" && <UnitsOfMeasureTab isOwner={isOwner} />}

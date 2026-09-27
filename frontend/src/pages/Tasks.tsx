@@ -111,6 +111,15 @@ function BoardView() {
       setDetail(null);
     },
   });
+  const deleteTask = useMutation({
+    mutationFn: async (id: string) => api.delete(`/tasks/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["areas"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+      setDetail(null);
+    },
+  });
   const myProfile = staff?.find((s) => s.user_id === me?.id);
   const canReview = (task: TaskItem) =>
     me?.user_type === "owner" ||
@@ -266,6 +275,16 @@ function BoardView() {
                 Mark as {STATUSES[Math.min(STATUSES.indexOf(detail.status) + 1, STATUSES.length - 1)]}
               </Button>
             )}
+
+            <button
+              type="button"
+              className="self-start text-xs font-semibold"
+              style={{ color: "var(--status-critical)" }}
+              disabled={deleteTask.isPending}
+              onClick={() => confirm(`Delete the "${detail.title}" task? This can't be undone.`) && deleteTask.mutate(detail.id)}
+            >
+              {deleteTask.isPending ? "Deleting..." : "Delete task"}
+            </button>
           </div>
         </Modal>
       )}

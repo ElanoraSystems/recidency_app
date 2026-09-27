@@ -33,6 +33,11 @@ export interface WasteReason {
   label: string;
 }
 
+export interface CostCenter {
+  id: string;
+  label: string;
+}
+
 export interface WasteLogLine {
   id: string;
   food_inventory_id: string | null;
@@ -248,7 +253,7 @@ export interface MealLogEntry {
   qty: number;
   unit_cost: number;
   notes: string | null;
-  produced_for: string | null;
+  cost_center: string | null;
 }
 
 export interface Supplier {
@@ -272,19 +277,25 @@ export interface CreditNote {
   notes: string | null;
 }
 
-export interface PurchaseRequest {
+export interface PurchaseRequestLine {
   id: string;
-  item: string;
+  item_master_id: string | null;
+  item_name: string;
   qty: number;
   unit: string;
   category: string;
-  urgency: string;
   est_cost: number;
+}
+
+export interface PurchaseRequest {
+  id: string;
   status: string;
+  urgency: string;
   request_date: string;
   requested_by: string | null;
-  linked_inventory_id: string | null;
   note: string | null;
+  lines: PurchaseRequestLine[];
+  total_est_cost: number;
 }
 
 export interface PoLine {

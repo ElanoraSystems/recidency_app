@@ -173,8 +173,11 @@ function StockDetailModal({ item, onClose }: { item: StockRow; onClose: () => vo
 
   async function onCreatePR() {
     await createPR.mutateAsync({
-      item: item.name, qty: item.max - item.qty, unit: item.unit, category: item.category,
-      urgency: "High", est_cost: Math.round((item.max - item.qty) * item.avgPrice * 100) / 100,
+      urgency: "High", note: null,
+      lines: [{
+        item_master_id: null, item_name: item.name, qty: item.max - item.qty, unit: item.unit,
+        category: item.category, est_cost: Math.round((item.max - item.qty) * item.avgPrice * 100) / 100,
+      }],
     } as never);
     onClose();
   }

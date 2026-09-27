@@ -13,7 +13,7 @@ from app.db.session import get_db
 from app.models.facilities import Asset, MaintenanceRequest
 from app.models.kitchen import ProposedMenu, WasteLog, WasteLogLine, WeeklyMealPlan
 from app.models.people import LeaveRequest, StaffProfile
-from app.models.purchasing import PurchaseOrder, PurchaseRequest
+from app.models.purchasing import PurchaseOrder, PurchaseRequest, PurchaseRequestLine
 from app.models.tasks import Task, TaskChecklistItem, TaskComment
 from app.models.user import User
 
@@ -30,10 +30,16 @@ async def list_approvals(db: AsyncSession = Depends(get_db), user: User = Depend
         await db.execute(select(PurchaseRequest).where(PurchaseRequest.status == "Pending Approval"))
     ).scalars().all()
     for pr in prs:
+        lines = (
+            await db.execute(select(PurchaseRequestLine).where(PurchaseRequestLine.pr_id == pr.id))
+        ).scalars().all()
+        total_est = sum(float(l.est_cost) for l in lines)
+        first_item = lines[0].item_name if lines else "empty request"
+        title = first_item if len(lines) <= 1 else f"{first_item} +{len(lines) - 1} more"
         out.append(
             {
-                "type": "purchase_request", "id": pr.id, "title": f"Purchase request — {pr.item}",
-                "sub": f"{pr.qty} {pr.unit} · est. {pr.est_cost}", "date": pr.request_date.isoformat(),
+                "type": "purchase_request", "id": pr.id, "title": f"Purchase request — {title}",
+                "sub": f"{len(lines)} item(s) · est. {total_est:.2f}", "date": pr.request_date.isoformat(),
             }
         )
 

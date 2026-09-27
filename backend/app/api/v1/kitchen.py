@@ -580,7 +580,7 @@ class MealLogIn(BaseModel):
     recipe_id: uuid.UUID | None = None
     qty: int
     notes: str | None = None
-    produced_for: str | None = None
+    cost_center: str | None = None
 
 
 class MealLogOut(BaseModel):
@@ -592,7 +592,7 @@ class MealLogOut(BaseModel):
     qty: int
     unit_cost: float
     notes: str | None
-    produced_for: str | None
+    cost_center: str | None
 
     class Config:
         from_attributes = True
@@ -630,7 +630,7 @@ async def log_meal(
         unit_cost=unit_cost,
         logged_by=user.id,
         notes=payload.notes,
-        produced_for=payload.produced_for,
+        cost_center=payload.cost_center,
     )
     db.add(meal)
     await db.flush()
@@ -931,7 +931,7 @@ async def meal_log_invoice_pdf(
         {
             **await _residence_pdf_context(db),
             "title": meal.dish,
-            "subtitle": meal.produced_for or meal.category,
+            "subtitle": meal.cost_center or meal.category,
             "date": meal.date.isoformat(),
             "line_items": [
                 {"name": meal.dish, "qty": float(meal.qty), "unit": "portions",

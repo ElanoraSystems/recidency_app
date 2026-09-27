@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -6,7 +6,7 @@ import { useCreate, useList, useUpdate } from "../api/hooks";
 import { Icon } from "../components/icons";
 import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { fmtDate, todayIso } from "../lib/date";
-import type { CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PurchaseOrder, PurchaseRequest, StaffMember, Supplier, UnitOfMeasureEntry } from "../types";
+import type { CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, StaffMember, Supplier, UnitOfMeasureEntry } from "../types";
 
 interface GrnLine { id: string; name: string; ordered_qty: number; received_qty: number; unit: string; ordered_price: number; price: number }
 interface Grn { id: string; code: string; po_id: string; supplier_id: string; date: string; received_by_name: string | null; lines: GrnLine[] }
@@ -74,6 +74,7 @@ function RequestsTab() {
   const { data, isLoading } = useList<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
   const { data: staff } = useList<StaffMember>("staff", "/people/staff");
   const qc = useQueryClient();
+  const [detail, setDetail] = useState<PurchaseRequest | null>(null);
   const decide = useMutation({
     mutationFn: async ({ id, approve }: { id: string; approve: boolean }) =>
       api.post(`/purchasing/purchase-requests/${id}/decision?approve=${approve}`),
@@ -89,18 +90,21 @@ function RequestsTab() {
 
       {isLoading ? <Spinner /> : !data || data.length === 0 ? <EmptyState label="No purchase requests." /> : (
         <Table>
-          <thead><tr><Th>Item</Th><Th>Qty</Th><Th>Requested by</Th><Th>Date</Th><Th>Urgency</Th><Th>Est. cost</Th><Th>Status</Th><Th>Action</Th></tr></thead>
+          <thead><tr><Th>Items</Th><Th>Requested by</Th><Th>Date</Th><Th>Urgency</Th><Th>Est. cost</Th><Th>Status</Th><Th>Action</Th></tr></thead>
           <tbody>
             {data.map((pr) => (
-              <tr key={pr.id}>
-                <Td className="font-medium">{pr.item}<div className="text-xs" style={{ color: "var(--ink-400)" }}>{pr.category}</div></Td>
-                <Td>{pr.qty} {pr.unit}</Td>
+              <tr key={pr.id} className="cursor-pointer" onClick={() => setDetail(pr)}>
+                <Td className="font-medium">
+                  {pr.lines[0]?.item_name ?? "empty request"}
+                  {pr.lines.length > 1 && <span style={{ color: "var(--ink-400)" }}> +{pr.lines.length - 1} more</span>}
+                  <div className="text-xs" style={{ color: "var(--ink-400)" }}>{pr.lines.length} item(s)</div>
+                </Td>
                 <Td>{requesterName(pr.requested_by)}</Td>
                 <Td>{fmtDate(pr.request_date)}</Td>
                 <Td><Badge tone={statusTone(pr.urgency)}>{pr.urgency}</Badge></Td>
-                <Td>KWD {pr.est_cost.toFixed(2)}</Td>
+                <Td>KWD {pr.total_est_cost.toFixed(2)}</Td>
                 <Td><Badge tone={statusTone(pr.status)}>{pr.status}</Badge></Td>
-                <Td>
+                <Td onClick={(e) => e.stopPropagation()}>
                   {pr.status === "Pending Approval" && (
                     <div className="flex gap-2">
                       <Button size="sm" variant="secondary" onClick={() => decide.mutate({ id: pr.id, approve: true })}>Approve</Button>
@@ -116,14 +120,33 @@ function RequestsTab() {
           </tbody>
         </Table>
       )}
+
+      {detail && (
+        <Modal title={`Request — ${detail.lines.length} item(s)`} onClose={() => setDetail(null)}>
+          <Table>
+            <thead><tr><Th>Item</Th><Th>Qty</Th><Th>Category</Th><Th>Est. cost</Th></tr></thead>
+            <tbody>
+              {detail.lines.map((l) => (
+                <tr key={l.id}>
+                  <Td className="font-medium">{l.item_name}</Td>
+                  <Td>{l.qty} {l.unit}</Td>
+                  <Td>{l.category}</Td>
+                  <Td>KWD {l.est_cost.toFixed(2)}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          {detail.note && <p className="mt-3 text-[13px]" style={{ color: "var(--ink-500)" }}>{detail.note}</p>}
+        </Modal>
+      )}
     </div>
   );
 }
 
-interface RequestLine { itemRef: string; item: string; qty: number; unit: string; category: string; urgency: string; est_cost: number }
+interface RequestLine { itemRef: string; item: string; qty: number; unit: string; category: string; est_cost: number }
 
 function newRequestLine(defaultUnit: string): RequestLine {
-  return { itemRef: "", item: "", qty: 1, unit: defaultUnit, category: "", urgency: "Medium", est_cost: 0 };
+  return { itemRef: "", item: "", qty: 1, unit: defaultUnit, category: "", est_cost: 0 };
 }
 
 export function NewPurchaseRequestPage() {
@@ -133,6 +156,8 @@ export function NewPurchaseRequestPage() {
   const uoms = [...(uomsRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
   const create = useCreate<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
   const [lines, setLines] = useState<RequestLine[]>([newRequestLine("")]);
+  const [urgency, setUrgency] = useState("Medium");
+  const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -161,81 +186,104 @@ export function NewPurchaseRequestPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      for (const line of lines) {
-        await create.mutateAsync({
-          item: line.item, qty: line.qty, unit: line.unit, category: line.category,
-          urgency: line.urgency, est_cost: line.est_cost, linked_inventory_id: line.itemRef || null,
-        } as never);
-      }
+      await create.mutateAsync({
+        urgency, note: note || null,
+        lines: lines.map((l) => ({
+          item_master_id: l.itemRef || null, item_name: l.item, qty: l.qty,
+          unit: l.unit, category: l.category, est_cost: l.est_cost,
+        })),
+      } as never);
       navigate("/purchasing");
     } finally {
       setSubmitting(false);
     }
   }
 
+  const totalEstCost = lines.reduce((s, l) => s + l.est_cost, 0);
+
   return (
     <div>
       <Link to="/purchasing" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Purchasing</Link>
-      <PageHeader title="New purchase request" subtitle="Each line becomes its own request, approved and ordered independently." />
-      <form onSubmit={onSubmit} className="flex flex-col gap-4 max-w-3xl">
-        {lines.map((line, i) => (
-          <div key={i} className="flex flex-col gap-3 rounded-xl border p-3" style={{ borderColor: "var(--border-strong)" }}>
-            <div className="flex items-center justify-between">
-              <span className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--ink-400)" }}>Item {i + 1}</span>
-              {lines.length > 1 && (
-                <button type="button" className="text-xs font-semibold" style={{ color: "var(--status-critical)" }} onClick={() => removeLine(i)}>
-                  Remove
-                </button>
-              )}
-            </div>
-            <label className="flex flex-col gap-1 text-[13px] font-medium">Item (from Item Master)
-              <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                value={line.itemRef} onChange={(e) => onPickItem(i, e.target.value)}>
-                <option value="">— custom item, not in Item Master —</option>
-                {itemMaster?.filter((im) => im.active).map((im) => <option key={im.id} value={im.id}>{im.name}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-[13px] font-medium">Item name
-              <input required placeholder="e.g. Coffee Beans" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                value={line.item} onChange={(e) => updateLine(i, { item: e.target.value })} />
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="flex flex-col gap-1 text-[13px] font-medium">Quantity
-                <input type="number" required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                  value={line.qty} onChange={(e) => updateLine(i, { qty: Number(e.target.value) })} />
-              </label>
-              <label className="flex flex-col gap-1 text-[13px] font-medium">Unit
-                <select required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                  value={line.unit} onChange={(e) => updateLine(i, { unit: e.target.value })}>
-                  {line.unit && !uoms.some((u) => u.label === line.unit) && <option value={line.unit}>{line.unit}</option>}
-                  {uoms.map((u) => <option key={u.id} value={u.label}>{u.label}</option>)}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-[13px] font-medium">Category
-                <input required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                  value={line.category} onChange={(e) => updateLine(i, { category: e.target.value })} />
-              </label>
-              <label className="flex flex-col gap-1 text-[13px] font-medium">Urgency
-                <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                  value={line.urgency} onChange={(e) => updateLine(i, { urgency: e.target.value })}>
-                  {["Low", "Medium", "High"].map((u) => <option key={u} value={u}>{u}</option>)}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-[13px] font-medium">Estimated cost (KWD)
-                <input type="number" step="0.01" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                  value={line.est_cost} onChange={(e) => updateLine(i, { est_cost: Number(e.target.value) })} />
-              </label>
-            </div>
-          </div>
-        ))}
-        <Button type="button" variant="secondary" onClick={addLine}>+ Add another item</Button>
-        <Button type="submit" disabled={submitting}>
-          {submitting ? "Submitting..." : `Submit ${lines.length} Request${lines.length > 1 ? "s" : ""}`}
+      <PageHeader title="New purchase request" subtitle="Add every item you need — the whole list becomes one request, approved and ordered together." />
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-3 max-w-xl rounded-xl border p-3" style={{ borderColor: "var(--border-strong)" }}>
+          <label className="flex flex-col gap-1 text-[13px] font-medium">Urgency
+            <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+              value={urgency} onChange={(e) => setUrgency(e.target.value)}>
+              {["Low", "Medium", "High"].map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-[13px] font-medium">Note (optional)
+            <input className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+              value={note} onChange={(e) => setNote(e.target.value)} />
+          </label>
+        </div>
+
+        <div className="overflow-x-auto">
+          <Table>
+            <thead>
+              <tr><Th>Item (from Item Master)</Th><Th>Custom item name</Th><Th>Qty</Th><Th>Unit</Th><Th>Category</Th><Th>Est. cost (KWD)</Th><Th>{" "}</Th></tr>
+            </thead>
+            <tbody>
+              {lines.map((line, i) => (
+                <tr key={i}>
+                  <Td>
+                    <select className="w-40 rounded-lg border px-2 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                      value={line.itemRef} onChange={(e) => onPickItem(i, e.target.value)}>
+                      <option value="">— custom item —</option>
+                      {itemMaster?.filter((im) => im.active).map((im) => <option key={im.id} value={im.id}>{im.name}</option>)}
+                    </select>
+                  </Td>
+                  <Td>
+                    <input required={!line.itemRef} disabled={!!line.itemRef} placeholder="e.g. Coffee Beans"
+                      className="w-40 rounded-lg border px-2 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                      value={line.item} onChange={(e) => updateLine(i, { item: e.target.value })} />
+                  </Td>
+                  <Td>
+                    <input type="number" required className="w-20 rounded-lg border px-2 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                      value={line.qty} onChange={(e) => updateLine(i, { qty: Number(e.target.value) })} />
+                  </Td>
+                  <Td>
+                    <select required className="w-24 rounded-lg border px-2 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                      value={line.unit} onChange={(e) => updateLine(i, { unit: e.target.value })}>
+                      {line.unit && !uoms.some((u) => u.label === line.unit) && <option value={line.unit}>{line.unit}</option>}
+                      {uoms.map((u) => <option key={u.id} value={u.label}>{u.label}</option>)}
+                    </select>
+                  </Td>
+                  <Td>
+                    <input required className="w-28 rounded-lg border px-2 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                      value={line.category} onChange={(e) => updateLine(i, { category: e.target.value })} />
+                  </Td>
+                  <Td>
+                    <input type="number" step="0.01" className="w-24 rounded-lg border px-2 py-1.5 text-right text-sm" style={{ borderColor: "var(--border-strong)" }}
+                      value={line.est_cost} onChange={(e) => updateLine(i, { est_cost: Number(e.target.value) })} />
+                  </Td>
+                  <Td>
+                    {lines.length > 1 && (
+                      <button type="button" className="text-xs font-semibold" style={{ color: "var(--status-critical)" }} onClick={() => removeLine(i)}>
+                        Remove
+                      </button>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+
+        <div className="flex items-center justify-between max-w-3xl">
+          <Button type="button" variant="secondary" onClick={addLine}>+ Add another item</Button>
+          <span className="text-[13px] font-semibold">Total est. cost: KWD {totalEstCost.toFixed(2)}</span>
+        </div>
+        <Button type="submit" disabled={submitting} className="self-start">
+          {submitting ? "Submitting..." : `Submit Request (${lines.length} item${lines.length > 1 ? "s" : ""})`}
         </Button>
       </form>
     </div>
   );
 }
+
+const UNASSIGNED = "unassigned";
 
 export function NewPurchaseOrderPage() {
   const { prId } = useParams<{ prId: string }>();
@@ -243,17 +291,55 @@ export function NewPurchaseOrderPage() {
   const qc = useQueryClient();
   const { data: requests, isLoading } = useList<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
   const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
+  const { data: itemMaster } = useList<ItemMasterEntry>("item-master", "/item-master");
   const pr = requests?.find((r) => r.id === prId);
-  const [form, setForm] = useState({ supplier_id: "", price: 0, expected_date: "" });
+
+  // Auto-groups the PR's lines by each item's preferred supplier (Odoo's
+  // own behavior for a multi-vendor request) — a line with no linked Item
+  // Master row, or no preferred supplier set, falls into one bucket the
+  // user assigns a supplier to manually.
+  const groups = useMemo(() => {
+    if (!pr) return [];
+    const byKey = new Map<string, PurchaseRequestLine[]>();
+    for (const line of pr.lines) {
+      const im = line.item_master_id ? itemMaster?.find((x) => x.id === line.item_master_id) : undefined;
+      const key = im?.preferred_supplier_id ?? UNASSIGNED;
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key)!.push(line);
+    }
+    return [...byKey.entries()].map(([key, lines]) => ({ key, resolvedSupplierId: key === UNASSIGNED ? "" : key, lines }));
+  }, [pr, itemMaster]);
+
+  // groupSupplier only holds a value once the user has actually picked one
+  // (or changed a pre-resolved one) — the effective value for a group that
+  // hasn't been touched yet is derived from its resolved preferred supplier
+  // at read time, not synced into state, so it stays correct across
+  // itemMaster's own load timing instead of racing it.
+  const [groupSupplier, setGroupSupplier] = useState<Record<string, string>>({});
+  const [expectedDates, setExpectedDates] = useState<Record<string, string>>({});
+  const [prices, setPrices] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    if (pr) setForm((s) => ({ ...s, price: pr.est_cost / pr.qty || 0 }));
+    if (!pr) return;
+    setPrices((s) => {
+      const next = { ...s };
+      for (const line of pr.lines) if (next[line.id] === undefined) next[line.id] = line.qty ? line.est_cost / line.qty : 0;
+      return next;
+    });
   }, [pr]);
+
+  function effectiveSupplier(g: { key: string; resolvedSupplierId: string }): string {
+    return groupSupplier[g.key] ?? g.resolvedSupplierId;
+  }
 
   const convert = useMutation({
     mutationFn: async () =>
       api.post(`/purchasing/purchase-requests/${prId}/convert-to-po`, {
-        supplier_id: form.supplier_id, price: form.price, expected_date: form.expected_date || null,
+        groups: groups.map((g) => ({
+          supplier_id: effectiveSupplier(g),
+          expected_date: expectedDates[g.key] || null,
+          lines: g.lines.map((l) => ({ pr_line_id: l.id, price: prices[l.id] ?? 0 })),
+        })),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["purchase-requests"] });
@@ -264,38 +350,73 @@ export function NewPurchaseOrderPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.supplier_id) return;
+    if (groups.some((g) => !effectiveSupplier(g))) return;
     await convert.mutateAsync();
   }
 
   if (isLoading) return <Spinner />;
   if (!pr) return <EmptyState label="Purchase request not found." />;
 
+  const grandTotal = groups.reduce(
+    (s, g) => s + g.lines.reduce((gs, l) => gs + (prices[l.id] ?? 0) * l.qty, 0), 0,
+  );
+
   return (
     <div>
       <Link to="/purchasing" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Purchasing</Link>
-      <PageHeader title={`Create purchase order — ${pr.item}`} />
-      <form onSubmit={onSubmit} className="flex flex-col gap-3 max-w-xl">
-        <div className="text-[13px]" style={{ color: "var(--ink-500)" }}>{pr.qty} {pr.unit} · {pr.category}</div>
-        <label className="flex flex-col gap-1 text-[13px] font-medium">Supplier
-          <select required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-            value={form.supplier_id} onChange={(e) => setForm((s) => ({ ...s, supplier_id: e.target.value }))}>
-            <option value="">— choose a supplier —</option>
-            {suppliers?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-[13px] font-medium">Price per unit (KWD)
-          <input type="number" step="0.001" required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-            value={form.price} onChange={(e) => setForm((s) => ({ ...s, price: Number(e.target.value) }))} />
-        </label>
-        <label className="flex flex-col gap-1 text-[13px] font-medium">Expected delivery date
-          <input type="date" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-            value={form.expected_date} onChange={(e) => setForm((s) => ({ ...s, expected_date: e.target.value }))} />
-        </label>
-        <div className="text-[12.5px]" style={{ color: "var(--ink-400)" }}>
-          Order total: KWD {(form.price * pr.qty).toFixed(2)}{form.price * pr.qty > 500 ? " — over KWD 500, will require Owner approval" : ""}
-        </div>
-        <Button type="submit" disabled={convert.isPending}>{convert.isPending ? "Creating..." : "Create Purchase Order"}</Button>
+      <PageHeader
+        title={`Create purchase order${groups.length > 1 ? "s" : ""} — ${pr.lines.length} item(s)`}
+        subtitle={groups.length > 1 ? `Split into ${groups.length} orders by preferred supplier.` : undefined}
+      />
+      <form onSubmit={onSubmit} className="flex flex-col gap-4 max-w-3xl">
+        {groups.map((g) => {
+          const groupTotal = g.lines.reduce((s, l) => s + (prices[l.id] ?? 0) * l.qty, 0);
+          return (
+            <div key={g.key} className="flex flex-col gap-3 rounded-xl border p-3" style={{ borderColor: "var(--border-strong)" }}>
+              <div className="flex items-center gap-3">
+                <label className="flex flex-1 flex-col gap-1 text-[13px] font-medium">
+                  {g.resolvedSupplierId ? "Supplier (preferred)" : "Supplier — none preferred, choose one"}
+                  <select required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                    value={effectiveSupplier(g)} onChange={(e) => setGroupSupplier((s) => ({ ...s, [g.key]: e.target.value }))}>
+                    <option value="">— choose a supplier —</option>
+                    {suppliers?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-[13px] font-medium">Expected delivery
+                  <input type="date" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                    value={expectedDates[g.key] ?? ""} onChange={(e) => setExpectedDates((s) => ({ ...s, [g.key]: e.target.value }))} />
+                </label>
+              </div>
+              <Table>
+                <thead><tr><Th>Item</Th><Th>Qty</Th><Th>Price/unit (KWD)</Th><Th>Line total</Th></tr></thead>
+                <tbody>
+                  {g.lines.map((l) => (
+                    <tr key={l.id}>
+                      <Td className="font-medium">{l.item_name}</Td>
+                      <Td>{l.qty} {l.unit}</Td>
+                      <Td>
+                        <input type="number" step="0.001" required
+                          className="w-24 rounded-lg border px-2 py-1 text-right text-sm"
+                          style={{ borderColor: "var(--border-strong)" }}
+                          value={prices[l.id] ?? 0}
+                          onChange={(e) => setPrices((s) => ({ ...s, [l.id]: Number(e.target.value) }))}
+                        />
+                      </Td>
+                      <Td>KWD {((prices[l.id] ?? 0) * l.qty).toFixed(2)}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+              <div className="text-[12.5px]" style={{ color: "var(--ink-400)" }}>
+                Order total: KWD {groupTotal.toFixed(2)}{groupTotal > 500 ? " — over KWD 500, will require Owner approval" : ""}
+              </div>
+            </div>
+          );
+        })}
+        <div className="text-[13px] font-semibold">Grand total across {groups.length} order{groups.length > 1 ? "s" : ""}: KWD {grandTotal.toFixed(2)}</div>
+        <Button type="submit" disabled={convert.isPending}>
+          {convert.isPending ? "Creating..." : `Create ${groups.length} Purchase Order${groups.length > 1 ? "s" : ""}`}
+        </Button>
       </form>
     </div>
   );
@@ -663,12 +784,13 @@ function ShoppingBasketTab() {
   async function submitBasket() {
     setSubmitting(true);
     try {
-      for (const line of basket) {
-        await create.mutateAsync({
-          item: line.name, qty: line.qty, unit: line.unit, category: line.category,
-          urgency: "Medium", est_cost: line.estCost, linked_inventory_id: line.itemMasterId,
-        } as never);
-      }
+      await create.mutateAsync({
+        urgency: "Medium", note: null,
+        lines: basket.map((line) => ({
+          item_master_id: line.itemMasterId, item_name: line.name, qty: line.qty,
+          unit: line.unit, category: line.category, est_cost: line.estCost,
+        })),
+      } as never);
       setBasket([]);
     } finally {
       setSubmitting(false);

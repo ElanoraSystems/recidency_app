@@ -21,7 +21,8 @@ from app.api.v1.kitchen import _load_uom_map, _resolve_ingredient_qty, compute_r
 from app.models.kitchen import FoodInventory, MealLog, MenuOption, ProposedMenu, Recipe, RecipeIngredient
 from app.models.people import Attendance, LeaveRequest, Shift, StaffProfile
 from app.models.purchasing import (
-    Grn, GrnLine, Inventory, ItemMaster, PoLine, PurchaseOrder, PurchaseRequest, Supplier, UnitOfMeasure,
+    Grn, GrnLine, Inventory, ItemMaster, PoLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine,
+    Supplier, UnitOfMeasure,
 )
 from app.models.tasks import GardenTask, PoolLog, Task, TaskChecklistItem, TaskTemplate
 from app.models.user import FamilyAccount, FamilyModuleAccess, Role, RoleModuleAccess, User
@@ -392,13 +393,18 @@ async def seed() -> None:
             item_master[name] = im
 
         # -------------------------------------------------- purchase chain --
-        pr1 = PurchaseRequest(item="Toilet Paper (12-pack)", qty=15, unit="pack", category="Toiletries",
-                               requested_by=staff_users["stf-3"].id, request_date=D(-1), status="Pending Approval",
-                               urgency="High", est_cost=51, linked_inventory_id=item_master["Toilet Paper (12-pack)"].id)
-        pr2 = PurchaseRequest(item="Pool Chlorine Tablets", qty=20, unit="kg", category="Pool Supplies",
-                               requested_by=staff_users["stf-8"].id, request_date=D(-2), status="Pending Approval",
-                               urgency="High", est_cost=82, linked_inventory_id=item_master["Pool Chlorine Tablets"].id)
+        pr1 = PurchaseRequest(requested_by=staff_users["stf-3"].id, request_date=D(-1),
+                               status="Pending Approval", urgency="High")
+        pr2 = PurchaseRequest(requested_by=staff_users["stf-8"].id, request_date=D(-2),
+                               status="Pending Approval", urgency="High")
         db.add_all([pr1, pr2])
+        await db.flush()
+        db.add(PurchaseRequestLine(pr_id=pr1.id, item_master_id=item_master["Toilet Paper (12-pack)"].id,
+                                    item_name="Toilet Paper (12-pack)", qty=15, unit="pack",
+                                    category="Toiletries", est_cost=51))
+        db.add(PurchaseRequestLine(pr_id=pr2.id, item_master_id=item_master["Pool Chlorine Tablets"].id,
+                                    item_name="Pool Chlorine Tablets", qty=20, unit="kg",
+                                    category="Pool Supplies", est_cost=82))
 
         po1 = PurchaseOrder(code="PO-1042", supplier_id=sparkle.id, status="Goods Received", order_date=D(-8),
                              expected_date=D(-3), total=72.5, payment_status="Paid")

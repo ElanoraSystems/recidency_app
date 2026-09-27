@@ -128,23 +128,35 @@ class StockCountLine(Base, UUIDPKMixin):
 
 
 class PurchaseRequest(Base, UUIDPKMixin, TimestampMixin):
+    """Header for a multi-item request — see PurchaseRequestLine for the
+    items themselves. One PR, N lines, approved and converted as a unit."""
+
     __tablename__ = "purchase_requests"
 
-    item: Mapped[str] = mapped_column(String(150))
-    qty: Mapped[float] = mapped_column(Numeric(10, 2))
-    unit: Mapped[str] = mapped_column(String(20))
-    category: Mapped[str] = mapped_column(String(80))
     requested_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     request_date: Mapped[date] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(30), default="Pending Approval")
     urgency: Mapped[str] = mapped_column(String(20), default="Medium")
-    est_cost: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
-    linked_inventory_id: Mapped[uuid.UUID | None] = mapped_column(
+    note: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class PurchaseRequestLine(Base, UUIDPKMixin):
+    __tablename__ = "purchase_request_lines"
+
+    pr_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("purchase_requests.id", ondelete="CASCADE"))
+    # Nullable — a custom item not in the catalog is still a valid line,
+    # it just has no Item Master row (and so no preferred_supplier_id to
+    # auto-group by when converting to a PO).
+    item_master_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("item_master.id", ondelete="SET NULL"), nullable=True
     )
-    note: Mapped[str | None] = mapped_column(String, nullable=True)
+    item_name: Mapped[str] = mapped_column(String(150))
+    qty: Mapped[float] = mapped_column(Numeric(10, 2))
+    unit: Mapped[str] = mapped_column(String(20))
+    category: Mapped[str] = mapped_column(String(80))
+    est_cost: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
 
 
 class PurchaseOrder(Base, UUIDPKMixin, TimestampMixin):

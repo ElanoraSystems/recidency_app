@@ -34,11 +34,15 @@ from app.models.kitchen import (
     MealLog,
     Recipe,
     RecipeIngredient,
+    StockTransfer,
+    StockTransferLine,
     WasteLog,
     WasteLogLine,
 )
 from app.models.people import StaffProfile
-from app.models.purchasing import Grn, GrnLine, ItemMaster, PoLine, PurchaseOrder, PurchaseRequest, Supplier
+from app.models.purchasing import (
+    Grn, GrnLine, ItemMaster, PoLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, Supplier,
+)
 from app.models.tasks import Task, TaskChecklistItem
 from app.models.user import User
 
@@ -117,6 +121,11 @@ MEAL_CATEGORY_RECIPES = {
     "Lunch": ["Vegetable Rice Pilaf", "Roasted Tomato Soup"],
     "Dinner": ["Chicken Curry", "Pasta Spaghetti", "Prawns Curry", "Creamy Garlic Chicken"],
 }
+
+# Matches the real Settings -> Waste Reasons list, not an invented one.
+WASTE_REASONS = ["Spoilage", "Overproduction", "Trim/Prep Waste", "Expired", "Dropped/Contaminated"]
+
+TRANSFER_REASONS = ["Staff meal prep", "Private event catering", "Poolside bar transfer", "Emergency top-up"]
 
 KITCHEN_TASKS = [
     ("Morning prep station setup", ["Sanitize counters", "Check stock levels", "Prep mise en place"]),
@@ -243,12 +252,14 @@ def build_restock_schedule(food_by_name: dict, base_cost: dict[str, float]) -> d
 
 async def receive_batch(db, item: FoodInventory, item_master: ItemMaster, supplier: Supplier, actor: User, day: int, qty: float, price: float):
     pr = PurchaseRequest(
-        item=item.name, qty=qty, unit=item.unit, category=item.category,
-        requested_by=actor.id, request_date=D(day), status="Approved",
-        urgency="Medium", est_cost=round(qty * price, 2), linked_inventory_id=item_master.id,
+        requested_by=actor.id, request_date=D(day), status="Approved", urgency="Medium",
     )
     db.add(pr)
     await db.flush()
+    db.add(PurchaseRequestLine(
+        pr_id=pr.id, item_master_id=item_master.id, item_name=item.name,
+        qty=qty, unit=item.unit, category=item.category, est_cost=round(qty * price, 2),
+    ))
 
     po = PurchaseOrder(
         code=await _next_code(db, PurchaseOrder, "PO", 1001),
@@ -318,12 +329,26 @@ async def log_waste(db, item: FoodInventory, day: int, chef: User):
     waste_qty = round(min(float(item.qty), float(item.qty) * random.uniform(0.05, 0.15)), 2)
     if waste_qty <= 0:
         return
-    reason = random.choice(["Spoilage", "Over-prepped", "Dropped/damaged"])
+    reason = random.choice(WASTE_REASONS)
     waste = WasteLog(date=D(day), reason=reason, notes=None, status="Reviewed", logged_by=chef.id, reviewed_by=chef.id)
     db.add(waste)
     await db.flush()
     db.add(WasteLogLine(waste_log_id=waste.id, food_inventory_id=item.id, ingredient_name=item.name, qty=waste_qty, unit=item.unit, unit_cost=float(item.cost)))
     await _consume_fefo(db, item.id, waste_qty)
+
+
+async def log_transfer(db, item: FoodInventory, day: int, chef: User):
+    if float(item.qty) <= 0:
+        return
+    transfer_qty = round(min(float(item.qty), float(item.qty) * random.uniform(0.08, 0.2)), 2)
+    if transfer_qty <= 0:
+        return
+    reason = random.choice(TRANSFER_REASONS)
+    transfer = StockTransfer(date=D(day), reason=reason, notes=None, logged_by=chef.id)
+    db.add(transfer)
+    await db.flush()
+    db.add(StockTransferLine(transfer_id=transfer.id, food_inventory_id=item.id, ingredient_name=item.name, qty=transfer_qty, unit=item.unit))
+    await _consume_fefo(db, item.id, transfer_qty)
 
 
 def task_status_for(days_ago: int) -> tuple[str, bool]:
@@ -397,6 +422,7 @@ async def main():
         meal_category_list = list(MEAL_CATEGORY_RECIPES.keys())
         meals_logged = 0
         waste_logged = 0
+        transfers_logged = 0
         tasks_created = 0
         restocks_done = 0
 
@@ -418,11 +444,17 @@ async def main():
                 await log_meal(db, recipe, meal_category, day, qty_portions, chef_user)
                 meals_logged += 1
 
-            if random.random() < 0.1:
+            if random.random() < 0.15:
                 candidates = [f for f in food_by_name.values() if float(f.qty) > 0]
                 if candidates:
                     await log_waste(db, random.choice(candidates), day, chef_user)
                     waste_logged += 1
+
+            if random.random() < 0.12:
+                candidates = [f for f in food_by_name.values() if float(f.qty) > 0]
+                if candidates:
+                    await log_transfer(db, random.choice(candidates), day, chef_user)
+                    transfers_logged += 1
 
             if random.random() < 0.35:
                 await seed_kitchen_task(db, day, chef_sp, manager_sp)
@@ -432,7 +464,7 @@ async def main():
             # Refresh food_by_name qty/cost view for next iteration's decisions.
             food_by_name = {f.name: f for f in (await db.execute(select(FoodInventory))).scalars().all()}
 
-        print(f"Restocks: {restocks_done}, meals logged: {meals_logged}, waste events: {waste_logged}, kitchen tasks: {tasks_created}")
+        print(f"Restocks: {restocks_done}, meals logged: {meals_logged}, waste events: {waste_logged}, transfers: {transfers_logged}, kitchen tasks: {tasks_created}")
         print(f"Window: {D(0)} to {D(90)}")
 
 

@@ -20,6 +20,7 @@ from app.models.purchasing import (
     PoLine,
     PurchaseOrder,
     PurchaseRequest,
+    PurchaseRequestLine,
     Supplier,
 )
 from app.models.user import User
@@ -34,25 +35,56 @@ item_master_router = APIRouter(prefix="/item-master", tags=["purchasing"])
 
 
 # --------------------------------------------------------- purchase requests
-class PurchaseRequestIn(BaseModel):
-    item: str
+class PurchaseRequestLineIn(BaseModel):
+    item_master_id: uuid.UUID | None = None
+    item_name: str
     qty: float
     unit: str
     category: str
-    urgency: str = "Medium"
     est_cost: float = 0
-    linked_inventory_id: uuid.UUID | None = None
-    note: str | None = None
 
 
-class PurchaseRequestOut(PurchaseRequestIn):
+class PurchaseRequestLineOut(PurchaseRequestLineIn):
     id: uuid.UUID
-    request_date: date
-    status: str
-    requested_by: uuid.UUID | None
 
     class Config:
         from_attributes = True
+
+
+class PurchaseRequestIn(BaseModel):
+    urgency: str = "Medium"
+    note: str | None = None
+    lines: list[PurchaseRequestLineIn]
+
+
+class PurchaseRequestOut(BaseModel):
+    id: uuid.UUID
+    request_date: date
+    status: str
+    urgency: str
+    requested_by: uuid.UUID | None
+    note: str | None
+    lines: list[PurchaseRequestLineOut]
+    total_est_cost: float
+
+    class Config:
+        from_attributes = True
+
+
+async def _pr_out(db: AsyncSession, pr: PurchaseRequest) -> PurchaseRequestOut:
+    result = await db.execute(select(PurchaseRequestLine).where(PurchaseRequestLine.pr_id == pr.id))
+    lines = [
+        PurchaseRequestLineOut(
+            id=l.id, item_master_id=l.item_master_id, item_name=l.item_name,
+            qty=float(l.qty), unit=l.unit, category=l.category, est_cost=float(l.est_cost),
+        )
+        for l in result.scalars().all()
+    ]
+    return PurchaseRequestOut(
+        id=pr.id, request_date=pr.request_date, status=pr.status, urgency=pr.urgency,
+        requested_by=pr.requested_by, note=pr.note, lines=lines,
+        total_est_cost=round(sum(l.est_cost for l in lines), 2),
+    )
 
 
 @router.get("/purchase-requests", response_model=list[PurchaseRequestOut])
@@ -60,7 +92,7 @@ async def list_purchase_requests(
     db: AsyncSession = Depends(get_db), _user: User = Depends(purchasing_access)
 ):
     result = await db.execute(select(PurchaseRequest).order_by(PurchaseRequest.request_date.desc()))
-    return result.scalars().all()
+    return [await _pr_out(db, pr) for pr in result.scalars().all()]
 
 
 @router.post("/purchase-requests", response_model=PurchaseRequestOut, status_code=201)
@@ -69,17 +101,20 @@ async def create_purchase_request(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(purchasing_access),
 ):
+    if not payload.lines:
+        raise HTTPException(400, "A purchase request needs at least one line item")
     pr = PurchaseRequest(
-        **payload.model_dump(),
-        request_date=date.today(),
-        status="Pending Approval",
-        requested_by=user.id,
+        request_date=date.today(), status="Pending Approval",
+        urgency=payload.urgency, note=payload.note, requested_by=user.id,
     )
     db.add(pr)
-    await log_activity(db, user, "Submitted purchase request", f"{payload.item} × {payload.qty}")
+    await db.flush()
+    for line in payload.lines:
+        db.add(PurchaseRequestLine(pr_id=pr.id, **line.model_dump()))
+    await log_activity(db, user, "Submitted purchase request", f"{len(payload.lines)} item(s)")
     await db.commit()
     await db.refresh(pr)
-    return pr
+    return await _pr_out(db, pr)
 
 
 @router.post("/purchase-requests/{pr_id}/decision", response_model=PurchaseRequestOut)
@@ -93,10 +128,11 @@ async def decide_purchase_request(
     if not pr:
         raise HTTPException(404, "Purchase request not found")
     pr.status = "Approved" if approve else "Rejected"
-    await log_activity(db, user, f"{pr.status} purchase request", f"{pr.item} × {pr.qty}")
+    line_count = len((await db.execute(select(PurchaseRequestLine).where(PurchaseRequestLine.pr_id == pr_id))).scalars().all())
+    await log_activity(db, user, f"{pr.status} purchase request", f"{line_count} item(s)")
     await db.commit()
     await db.refresh(pr)
-    return pr
+    return await _pr_out(db, pr)
 
 
 # ----------------------------------------------------------- purchase orders
@@ -440,13 +476,27 @@ async def decide_purchase_order(
     return await _po_out(db, po)
 
 
-class ConvertPrToPoIn(BaseModel):
-    supplier_id: uuid.UUID
+class ConvertPrLineIn(BaseModel):
+    pr_line_id: uuid.UUID
     price: float
+
+
+class ConvertPrGroupIn(BaseModel):
+    supplier_id: uuid.UUID
     expected_date: date | None = None
+    lines: list[ConvertPrLineIn]
 
 
-@router.post("/purchase-requests/{pr_id}/convert-to-po", response_model=PurchaseOrderOut)
+class ConvertPrToPoIn(BaseModel):
+    # One PO per group — the frontend groups the PR's lines by each item's
+    # preferred supplier (Odoo's own behavior for a multi-vendor request);
+    # a line with no preferred supplier goes in a group the user assigned
+    # a supplier to manually. Price is per-line, not per-request, since
+    # different items cost different amounts.
+    groups: list[ConvertPrGroupIn]
+
+
+@router.post("/purchase-requests/{pr_id}/convert-to-po", response_model=list[PurchaseOrderOut])
 async def convert_pr_to_po(
     pr_id: uuid.UUID,
     payload: ConvertPrToPoIn,
@@ -458,31 +508,50 @@ async def convert_pr_to_po(
         raise HTTPException(404, "Purchase request not found")
     if pr.status != "Approved":
         raise HTTPException(400, "Only an approved purchase request can be converted to an order")
+    if not payload.groups:
+        raise HTTPException(400, "At least one supplier group is required")
 
-    pr_qty = float(pr.qty)
-    total = pr_qty * payload.price
-    po = PurchaseOrder(
-        code=await _next_code(db, PurchaseOrder, "PO", 1001),
-        supplier_id=payload.supplier_id,
-        status="Pending Approval" if total > 500 else "Ordered",
-        order_date=date.today(),
-        expected_date=payload.expected_date,
-        total=total,
-        payment_status="Unpaid",
-        source_pr_id=pr.id,
-        created_by=user.id,
-    )
-    db.add(po)
-    await db.flush()
-    db.add(PoLine(
-        po_id=po.id, item_master_id=pr.linked_inventory_id, name=pr.item,
-        qty=pr_qty, unit=pr.unit, price=payload.price, last_price=payload.price,
-    ))
-    pr.status = f"Ordered → {po.code}"
-    await log_activity(db, user, "Created purchase order", f"{po.code} from {pr.item} — total {total:.2f}")
+    pr_lines = {
+        l.id: l for l in (
+            await db.execute(select(PurchaseRequestLine).where(PurchaseRequestLine.pr_id == pr_id))
+        ).scalars().all()
+    }
+    covered = {g.pr_line_id for group in payload.groups for g in group.lines}
+    if covered != set(pr_lines.keys()):
+        raise HTTPException(400, "Every item in the request must be included in a supplier group")
+
+    created_pos = []
+    po_codes = []
+    for group in payload.groups:
+        if not group.lines:
+            continue
+        total = sum(g.price * float(pr_lines[g.pr_line_id].qty) for g in group.lines)
+        po = PurchaseOrder(
+            code=await _next_code(db, PurchaseOrder, "PO", 1001),
+            supplier_id=group.supplier_id,
+            status="Pending Approval" if total > 500 else "Ordered",
+            order_date=date.today(),
+            expected_date=group.expected_date,
+            total=total,
+            payment_status="Unpaid",
+            source_pr_id=pr.id,
+            created_by=user.id,
+        )
+        db.add(po)
+        await db.flush()
+        for g in group.lines:
+            line = pr_lines[g.pr_line_id]
+            db.add(PoLine(
+                po_id=po.id, item_master_id=line.item_master_id, name=line.item_name,
+                qty=float(line.qty), unit=line.unit, price=g.price, last_price=g.price,
+            ))
+        created_pos.append(po)
+        po_codes.append(po.code)
+
+    pr.status = f"Ordered → {', '.join(po_codes)}"
+    await log_activity(db, user, "Created purchase order(s)", f"{', '.join(po_codes)} from {len(pr_lines)} item(s)")
     await db.commit()
-    await db.refresh(po)
-    return await _po_out(db, po)
+    return [await _po_out(db, po) for po in created_pos]
 
 
 # -------------------------------------------------------------------- GRNs --

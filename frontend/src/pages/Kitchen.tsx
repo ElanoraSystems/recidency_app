@@ -7,7 +7,7 @@ import { useCreate, useList } from "../api/hooks";
 import { Icon } from "../components/icons";
 import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { daysUntil, todayIso } from "../lib/date";
-import type { FoodInventoryBatchEntry, FoodInventoryItem, MealCategory, MealLogEntry, ProposedMenu, Recipe, RecipeIngredient, StockTransfer, UnitOfMeasureEntry, WasteLog, WasteReason, WeeklyMealPlan, WeeklyMealPlanEntry } from "../types";
+import type { CostCenter, FoodInventoryBatchEntry, FoodInventoryItem, MealCategory, MealLogEntry, ProposedMenu, Recipe, RecipeIngredient, StockTransfer, UnitOfMeasureEntry, WasteLog, WasteReason, WeeklyMealPlan, WeeklyMealPlanEntry } from "../types";
 
 const TABS = ["Meal Log", "Menu Proposals", "Staff Meal Plan", "Recipes", "Food Inventory", "Raw Material Transfer", "Waste Log"] as const;
 
@@ -976,10 +976,12 @@ function LogMealModal({ onClose }: { onClose: () => void }) {
   const { data: recipes } = useList<Recipe>("recipes", "/kitchen/recipes");
   const { data: mealCategoriesRaw } = useList<MealCategory>("meal-categories", "/kitchen/meal-categories");
   const mealCategories = [...(mealCategoriesRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
+  const { data: costCentersRaw } = useList<CostCenter>("cost-centers", "/kitchen/cost-centers");
+  const costCenters = [...(costCentersRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
   const logMeal = useCreate<MealLogEntry>("meal-log", "/kitchen/meal-log");
   const qc = useQueryClient();
   const [form, setForm] = useState({
-    date: todayIso(), category: "", dish: "", recipe_id: "", qty: 1, notes: "", produced_for: "",
+    date: todayIso(), category: "", dish: "", recipe_id: "", qty: 1, notes: "", cost_center: "",
   });
   useEffect(() => {
     if (mealCategories.length > 0 && !form.category) {
@@ -995,7 +997,7 @@ function LogMealModal({ onClose }: { onClose: () => void }) {
       dish: recipe?.name ?? (form.dish || "Custom dish"),
       recipe_id: form.recipe_id || null,
       notes: form.notes || null,
-      produced_for: form.produced_for || null,
+      cost_center: form.cost_center || null,
     } as never);
     if (form.recipe_id) qc.invalidateQueries({ queryKey: ["food-inventory"] });
     onClose();
@@ -1029,16 +1031,19 @@ function LogMealModal({ onClose }: { onClose: () => void }) {
           <input type="number" min={1} required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
             value={form.qty} onChange={(e) => setForm((s) => ({ ...s, qty: Number(e.target.value) }))} />
         </label>
-        <label className="flex flex-col gap-1 text-[13px] font-medium">Produced for
-          <input placeholder="e.g. Villa Security Team, Al Sabah family dinner — 12 guests" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-            value={form.produced_for} onChange={(e) => setForm((s) => ({ ...s, produced_for: e.target.value }))} />
+        <label className="flex flex-col gap-1 text-[13px] font-medium">Cost center
+          <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+            value={form.cost_center} onChange={(e) => setForm((s) => ({ ...s, cost_center: e.target.value }))}>
+            <option value="">— None —</option>
+            {costCenters.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
+          </select>
         </label>
         <label className="flex flex-col gap-1 text-[13px] font-medium">Notes
           <input placeholder="e.g. Family lunch, external order, event tray" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
             value={form.notes} onChange={(e) => setForm((s) => ({ ...s, notes: e.target.value }))} />
         </label>
         <p className="text-[12px]" style={{ color: "var(--ink-400)" }}>
-          Selecting a recipe pulls its actual usable-yield cost per portion automatically, and deducts the ingredients used from food inventory. "Produced for" is optional and appears on the invoice PDF.
+          Selecting a recipe pulls its actual usable-yield cost per portion automatically, and deducts the ingredients used from food inventory. "Cost center" is optional and appears on the invoice PDF.
         </p>
         <Button type="submit" disabled={logMeal.isPending}>{logMeal.isPending ? "Logging..." : "Log Meal"}</Button>
       </form>
