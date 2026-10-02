@@ -23,7 +23,9 @@ from app.models.kitchen import (
 )
 from app.models.purchasing import UnitOfMeasure
 from app.models.user import User
+from app.models.stock import RecipeCostSnapshot
 from app.services import units as unit_conv
+from app.services.recipe_costing import snapshot_recipe
 from app.services.codes import next_code
 from app.services.pdf import logo_data_uri, render_pdf
 
@@ -493,6 +495,8 @@ async def create_recipe(
     await db.flush()
     for ing in payload.ingredients:
         db.add(RecipeIngredient(recipe_id=recipe.id, **ing.model_dump()))
+    await db.flush()
+    await snapshot_recipe(db, recipe, "Recipe created")
     await log_activity(db, user, "Created recipe", recipe.name)
     await db.commit()
     await db.refresh(recipe)
@@ -520,9 +524,46 @@ async def update_recipe(
     await db.flush()
     for ing in payload.ingredients:
         db.add(RecipeIngredient(recipe_id=recipe.id, **ing.model_dump()))
+    await db.flush()
+    await snapshot_recipe(db, recipe, "Recipe edited")
     await db.commit()
     await db.refresh(recipe)
     return await _recipe_out(db, recipe)
+
+
+class RecipeCostPoint(BaseModel):
+    at: datetime
+    total_cost: float
+    cost_per_portion: float
+    portions: int
+    reason: str
+
+
+@router.get("/recipes/{recipe_id}/cost-history", response_model=list[RecipeCostPoint])
+async def recipe_cost_history(
+    recipe_id: uuid.UUID, db: AsyncSession = Depends(get_db), _user: User = Depends(kitchen_access)
+):
+    """How the recipe's cost has moved as ingredient prices changed, newest first."""
+    recipe = await db.get(Recipe, recipe_id)
+    if not recipe:
+        raise HTTPException(404, "Recipe not found")
+    rows = (
+        await db.execute(
+            select(RecipeCostSnapshot).where(RecipeCostSnapshot.recipe_id == recipe_id)
+            .order_by(RecipeCostSnapshot.created_at.desc(), RecipeCostSnapshot.id.desc())
+        )
+    ).scalars().all()
+    if not rows:  # recipes that predate cost history start their record on first look
+        await snapshot_recipe(db, recipe, "Recorded")
+        await db.commit()
+        rows = (
+            await db.execute(select(RecipeCostSnapshot).where(RecipeCostSnapshot.recipe_id == recipe_id))
+        ).scalars().all()
+    return [
+        RecipeCostPoint(at=r.created_at, total_cost=float(r.total_cost), cost_per_portion=float(r.cost_per_portion),
+                        portions=r.portions, reason=r.reason)
+        for r in rows
+    ]
 
 
 @router.delete("/recipes/{recipe_id}", status_code=204)

@@ -316,6 +316,7 @@ async def receive_batch(db, item: FoodInventory, item_master: ItemMaster, suppli
     movement = await stock_service.post_in(
         db, stock_type="food", stock_id=item.id, cc_id=main.id, qty=qty, unit_cost=price, txn_type="GRN",
         txn_id=grn.id, txn_code=grn.code, user=actor, batch_label=grn.code, expiry=expiry, received_date=D(day + 2),
+        on=D(day + 2),
     )
     movement.created_at = _at(day + 2)
 
@@ -355,7 +356,7 @@ async def log_meal(db, recipe: Recipe, meal_category: str, day: int, qty_portion
     for item, qty in needed:
         movements = await stock_service.post_out(
             db, stock_type="food", stock_id=item.id, cc_id=main.id, qty=qty, txn_type="MEAL_LOG",
-            txn_id=meal.id, txn_code=meal.code, user=chef,
+            txn_id=meal.id, txn_code=meal.code, user=chef, on=D(day),
         )
         for m in movements:
             m.created_at = _at(day)
@@ -382,7 +383,7 @@ async def log_waste(db, item: FoodInventory, day: int, chef: User) -> bool:
     await db.flush()
     movements = await stock_service.post_out(
         db, stock_type="food", stock_id=item.id, cc_id=main.id, qty=waste_qty, txn_type="WASTE",
-        txn_id=waste.id, txn_code=waste.code, user=chef,
+        txn_id=waste.id, txn_code=waste.code, user=chef, on=D(day),
     )
     for m in movements:
         m.created_at = _at(day)
@@ -409,7 +410,7 @@ async def log_transfer(db, item: FoodInventory, day: int, chef: User) -> bool:
     await db.flush()
     movements = await stock_service.post_transfer(
         db, stock_type="food", stock_id=item.id, from_cc=main.id, to_cc=target.id, qty=transfer_qty,
-        txn_type="TRANSFER", txn_id=transfer.id, txn_code=transfer.code, user=chef,
+        txn_type="TRANSFER", txn_id=transfer.id, txn_code=transfer.code, user=chef, on=D(day),
     )
     for m in movements:
         m.created_at = _at(day)

@@ -271,7 +271,8 @@ async def _post_meal_log(db: AsyncSession, meal: MealLog, user: User) -> None:
         if not recipe:
             raise HTTPException(400, f"The recipe for '{line.dish}' no longer exists")
         recipe_cost, _ = await _resolve_recipe(db, recipe)
-        line.unit_cost = recipe_cost.cost_per_portion
+        line.unit_cost = recipe_cost.cost_per_portion  # estimate; replaced below by the cost actually drawn
+        actual = 0.0
         # Scale = fraction of the recipe's full authored batch (raw_yield_g)
         # served, e.g. 4 portions from a batch that yields 10 => 0.4.
         scale = line.qty / (recipe_cost.portions or 1)
@@ -282,10 +283,11 @@ async def _post_meal_log(db: AsyncSession, meal: MealLog, user: User) -> None:
         for item, qty in consumed.values():
             if round(qty, 3) <= 0:
                 continue
-            await stock.post_out(
+            drawn = await stock.post_out(
                 db, stock_type="food", stock_id=item.id, cc_id=meal.cost_center_id, qty=qty,
-                txn_type="MEAL_LOG", txn_id=meal.id, txn_code=meal.code, user=user,
+                txn_type="MEAL_LOG", txn_id=meal.id, txn_code=meal.code, user=user, on=meal.date,
             )
+            actual += sum(float(m.total_value) for m in drawn)
             db.add(
                 ConsumptionLog(
                     date=meal.date, recipe_id=recipe.id, dish=recipe.name, meals_served=line.qty,
@@ -293,6 +295,11 @@ async def _post_meal_log(db: AsyncSession, meal: MealLog, user: User) -> None:
                     matched_stock_id=item.id, meal_log_id=meal.id,
                 )
             )
+        if actual > 0:
+            # Freeze the meal at what the stock actually cost when it was
+            # drawn (the batches' own costs), the same figure cost of sales
+            # uses, rather than the recipe's moving current cost.
+            line.unit_cost = round(actual / line.qty, 3)
 
 
 async def _unpost_meal_log(db: AsyncSession, meal: MealLog, user: User) -> None:
@@ -531,7 +538,7 @@ async def _post_transfer(db: AsyncSession, transfer: StockTransfer, user: User) 
         movements = await stock.post_transfer(
             db, stock_type="food", stock_id=line.food_inventory_id, from_cc=transfer.from_cost_center_id,
             to_cc=transfer.to_cost_center_id, qty=float(line.qty), txn_type="TRANSFER", txn_id=transfer.id,
-            txn_code=transfer.code, user=user,
+            txn_code=transfer.code, user=user, on=transfer.date,
         )
         line.unit_cost = stock.weighted_unit_cost(movements)
 
@@ -744,7 +751,7 @@ async def _post_waste(db: AsyncSession, waste: WasteLog, user: User) -> None:
             raise HTTPException(400, f"'{line.ingredient_name}' is no longer in stock records")
         movements = await stock.post_out(
             db, stock_type="food", stock_id=line.food_inventory_id, cc_id=waste.cost_center_id, qty=float(line.qty),
-            txn_type="WASTE", txn_id=waste.id, txn_code=waste.code, user=user,
+            txn_type="WASTE", txn_id=waste.id, txn_code=waste.code, user=user, on=waste.date,
         )
         line.unit_cost = stock.weighted_unit_cost(movements)
 

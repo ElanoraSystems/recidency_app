@@ -13,9 +13,10 @@ from app.api.deps import _user_allowed_modules, get_current_user
 from app.db.session import get_db
 from app.models.kitchen import CostCenter, FoodInventory
 from app.models.purchasing import Inventory
-from app.models.stock import CostOfSales, StockMovement
+from app.models.stock import CostOfSales, PeriodClose, StockMovement
 from app.models.user import User
-from app.services import stock
+from app.services import audit, stock
+from app.services.cos import recompute_period
 
 router = APIRouter(prefix="/stock", tags=["inventory"])
 
@@ -259,3 +260,103 @@ async def cost_of_sales(
         )
         for r in rows
     ]
+
+
+# --------------------------------------------------------- month-end close --
+class PeriodOut(BaseModel):
+    period: str
+    closed: bool
+    closed_at: datetime | None
+    closed_by_name: str | None
+    reopened_at: datetime | None
+    reopen_reason: str | None
+    counted_centers: list[str]
+    uncounted_centers: list[str]  # had stock activity but no submitted count
+
+
+class ReopenIn(BaseModel):
+    reason: str
+
+
+def _require_period(period: str) -> None:
+    try:
+        datetime.strptime(period, "%Y-%m")
+    except ValueError:
+        raise HTTPException(400, "Period must look like 2026-09")
+
+
+@router.get("/periods", response_model=list[PeriodOut])
+async def periods(db: AsyncSession = Depends(get_db), _user: User = Depends(stock_view_access)):
+    """Every month that has stock activity, a cost-of-sales record or a lock,
+    newest first, with which cost centers have been counted."""
+    labels = {c.id: c.label for c in (await db.execute(select(CostCenter))).scalars().all()}
+    month = func.to_char(StockMovement.posting_date, "YYYY-MM")
+    active: dict[str, set[uuid.UUID]] = {}
+    for col in (StockMovement.to_cost_center_id, StockMovement.from_cost_center_id):
+        rows = await db.execute(
+            select(month, col).where(col.is_not(None), StockMovement.txn_type != "OPENING").distinct()
+        )
+        for period, cc in rows.all():
+            active.setdefault(period, set()).add(cc)
+    counted: dict[str, set[uuid.UUID]] = {}
+    for period, cc in (await db.execute(select(CostOfSales.period, CostOfSales.cost_center_id).distinct())).all():
+        counted.setdefault(period, set()).add(cc)
+    closes = {c.period: c for c in (await db.execute(select(PeriodClose))).scalars().all()}
+    closer_ids = {c.closed_by for c in closes.values() if c.closed_by}
+    names = dict((await db.execute(select(User.id, User.name).where(User.id.in_(closer_ids)))).all()) if closer_ids else {}
+    out = []
+    for period in sorted(set(active) | set(counted) | set(closes), reverse=True):
+        close = closes.get(period)
+        done = counted.get(period, set())
+        out.append(
+            PeriodOut(
+                period=period, closed=bool(close and close.closed), closed_at=close.closed_at if close else None,
+                closed_by_name=names.get(close.closed_by) if close else None,
+                reopened_at=close.reopened_at if close else None, reopen_reason=close.reopen_reason if close else None,
+                counted_centers=sorted(labels.get(c, "?") for c in done),
+                uncounted_centers=sorted(labels.get(c, "?") for c in active.get(period, set()) - done),
+            )
+        )
+    return out
+
+
+def _owner_only(user: User) -> None:
+    if user.user_type != "owner":
+        raise HTTPException(403, "Only the owner (Super User) can close or reopen a month")
+
+
+@router.post("/periods/{period}/close", response_model=PeriodOut)
+async def close_period(period: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """Recalculates the month's cost of sales from the ledger, then locks the
+    month against any further stock postings."""
+    _owner_only(user)
+    _require_period(period)
+    row = (await db.execute(select(PeriodClose).where(PeriodClose.period == period))).scalar_one_or_none()
+    if row and row.closed:
+        raise HTTPException(400, f"{period} is already closed")
+    refreshed = await recompute_period(db, period)
+    if row is None:
+        row = PeriodClose(period=period)
+        db.add(row)
+    row.closed, row.closed_by, row.closed_at = True, user.id, datetime.now(timezone.utc)
+    await db.flush()
+    await audit.record(db, user, "period", row.id, period, "close", changes={"cost_of_sales_refreshed": refreshed})
+    await db.commit()
+    return next(p for p in await periods(db, user) if p.period == period)
+
+
+@router.post("/periods/{period}/reopen", response_model=PeriodOut)
+async def reopen_period(
+    period: str, payload: ReopenIn, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
+):
+    _owner_only(user)
+    _require_period(period)
+    if not payload.reason.strip():
+        raise HTTPException(400, "A reason is required to reopen a closed month")
+    row = (await db.execute(select(PeriodClose).where(PeriodClose.period == period))).scalar_one_or_none()
+    if not row or not row.closed:
+        raise HTTPException(400, f"{period} is not closed")
+    row.closed, row.reopened_by, row.reopened_at, row.reopen_reason = False, user.id, datetime.now(timezone.utc), payload.reason.strip()
+    await audit.record(db, user, "period", row.id, period, "reopen", reason=payload.reason.strip())
+    await db.commit()
+    return next(p for p in await periods(db, user) if p.period == period)

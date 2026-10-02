@@ -1,10 +1,11 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.clock import local_today
 from app.db.base import Base, UUIDPKMixin
 
 
@@ -49,6 +50,10 @@ class StockMovement(Base, UUIDPKMixin):
     status: Mapped[str] = mapped_column(String(10), default="Posted")  # Posted | Reversed (display only)
     reverses_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # The business date the movement belongs to (the document's own date), on
+    # the residence's calendar. Cost of sales and period locks use this, not
+    # created_at, so a late-entered document lands in the month it belongs to.
+    posting_date: Mapped[date] = mapped_column(Date, default=local_today)
 
 
 class InventoryBalance(Base, UUIDPKMixin):
@@ -113,4 +118,36 @@ class CostOfSales(Base, UUIDPKMixin):
     meals_value: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     waste_value: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     count_variance: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PeriodClose(Base, UUIDPKMixin):
+    """A month whose stock postings are locked. Nothing can post into (or
+    reverse out of) a closed month; the owner reopens it with a reason, and
+    closing it again recalculates its cost of sales."""
+
+    __tablename__ = "period_closes"
+
+    period: Mapped[str] = mapped_column(String(7), unique=True)  # YYYY-MM
+    closed: Mapped[bool] = mapped_column(Boolean, default=True)
+    closed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reopened_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reopened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reopen_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class RecipeCostSnapshot(Base, UUIDPKMixin):
+    """A recipe's cost at a point in time. Recipe costing always reads the
+    ingredients' current cost, so a snapshot is written whenever the recipe
+    is saved or an ingredient's cost moves, giving a cost history."""
+
+    __tablename__ = "recipe_cost_snapshots"
+    __table_args__ = (Index("ix_recipe_cost_snapshots_recipe", "recipe_id", "created_at"),)
+
+    recipe_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("recipes.id", ondelete="CASCADE"))
+    total_cost: Mapped[float] = mapped_column(Numeric(12, 3))
+    cost_per_portion: Mapped[float] = mapped_column(Numeric(12, 3))
+    portions: Mapped[int] = mapped_column()
+    reason: Mapped[str] = mapped_column(String(80))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -4,7 +4,7 @@ from datetime import date as DateType
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import local_today
@@ -84,6 +84,7 @@ class PurchaseRequestOut(BaseModel):
     approved_by_name: str | None
     note: str | None
     cost_center: str | None
+    cost_center_id: uuid.UUID | None
     lines: list[PurchaseRequestLineOut]
     total_est_cost: float
     po_codes: list[str]
@@ -110,7 +111,7 @@ async def _pr_out(db: AsyncSession, pr: PurchaseRequest) -> PurchaseRequestOut:
         id=pr.id, code=pr.code, request_date=pr.request_date, required_delivery_date=pr.required_delivery_date,
         status=pr.status, urgency=pr.urgency, requested_by=pr.requested_by,
         requested_by_name=names.get(pr.requested_by), approved_by_name=names.get(pr.approved_by),
-        note=pr.note, cost_center=pr.cost_center, lines=lines,
+        note=pr.note, cost_center=pr.cost_center, cost_center_id=pr.cost_center_id, lines=lines,
         total_est_cost=round(sum(l.est_cost for l in lines), 2), po_codes=list(po_codes),
     )
 
@@ -127,6 +128,15 @@ def _pr_line_values(line: PurchaseRequestLineIn) -> dict:
         "item_master_id": line.item_master_id, "item_name": line.item_name, "qty": line.qty, "unit": line.unit,
         "category": line.category, "est_unit_price": round(price, 3), "est_cost": round(line.qty * price, 2),
     }
+
+
+async def _named_cost_center(db: AsyncSession, label: str) -> CostCenter:
+    """PRs carry the cost center's label from the picker; resolve it to the
+    real record so it can follow the request through ordering and receiving."""
+    cc = (await db.execute(select(CostCenter).where(CostCenter.label == label))).scalar_one_or_none()
+    if not cc:
+        raise HTTPException(400, f"Unknown cost center '{label}'")
+    return cc
 
 
 async def _pr_decide(db: AsyncSession, pr: PurchaseRequest, user: User, action: str, reason: str | None = None) -> str:
@@ -160,10 +170,11 @@ async def create_purchase_request(
     if not payload.lines:
         raise HTTPException(400, "A purchase request needs at least one line item")
     values = [_pr_line_values(l) for l in payload.lines]
+    cc = await _named_cost_center(db, payload.cost_center)
     pr = PurchaseRequest(
         code=await _next_code(db, PurchaseRequest, "PR", 3001),
         request_date=local_today(), required_delivery_date=payload.required_delivery_date, status=workflow.DRAFT,
-        urgency=payload.urgency, note=payload.note, cost_center=payload.cost_center, requested_by=user.id,
+        urgency=payload.urgency, note=payload.note, cost_center=cc.label, cost_center_id=cc.id, requested_by=user.id,
     )
     db.add(pr)
     await db.flush()
@@ -192,7 +203,8 @@ async def update_purchase_request(
     if not payload.lines:
         raise HTTPException(400, "A purchase request needs at least one line item")
     values = [_pr_line_values(l) for l in payload.lines]
-    pr.urgency, pr.note, pr.cost_center = payload.urgency, payload.note, payload.cost_center
+    cc = await _named_cost_center(db, payload.cost_center)
+    pr.urgency, pr.note, pr.cost_center, pr.cost_center_id = payload.urgency, payload.note, cc.label, cc.id
     pr.required_delivery_date = payload.required_delivery_date
     await db.execute(delete(PurchaseRequestLine).where(PurchaseRequestLine.pr_id == pr.id))
     for v in values:
@@ -252,6 +264,7 @@ class PurchaseOrderIn(BaseModel):
     supplier_id: uuid.UUID
     expected_date: date | None = None
     source_pr_id: uuid.UUID | None = None
+    cost_center_id: uuid.UUID | None = None
     lines: list[PoLineIn]
 
 
@@ -276,6 +289,13 @@ class PurchaseOrderOut(BaseModel):
     approved_by: uuid.UUID | None
     source_pr_id: uuid.UUID | None
     source_pr_code: str | None
+    cost_center_id: uuid.UUID | None
+    cost_center: str | None
+    # What was actually invoiced on goods receipts so far vs what the same
+    # quantities would have cost at the ordered prices. The PO itself is never
+    # rewritten; it stays the record of what was ordered.
+    received_value: float
+    price_variance: float
     lines: list[PoLineOut]
 
     class Config:
@@ -288,6 +308,17 @@ async def _po_out(db: AsyncSession, po: PurchaseOrder) -> PurchaseOrderOut:
     source_pr_code = None
     if po.source_pr_id:
         source_pr_code = await db.scalar(select(PurchaseRequest.code).where(PurchaseRequest.id == po.source_pr_id))
+    cc_label = await db.scalar(select(CostCenter.label).where(CostCenter.id == po.cost_center_id)) if po.cost_center_id else None
+    received_value, ordered_value = (
+        await db.execute(
+            select(
+                func.coalesce(func.sum(GrnLine.received_qty * GrnLine.price), 0),
+                func.coalesce(func.sum(GrnLine.received_qty * GrnLine.ordered_price), 0),
+            )
+            .join(Grn, Grn.id == GrnLine.grn_id)
+            .where(Grn.po_id == po.id, Grn.status.in_([workflow.SUBMITTED, workflow.APPROVED, workflow.CLOSED]))
+        )
+    ).one()
     return PurchaseOrderOut(
         id=po.id,
         code=po.code,
@@ -301,6 +332,10 @@ async def _po_out(db: AsyncSession, po: PurchaseOrder) -> PurchaseOrderOut:
         approved_by=po.approved_by,
         source_pr_id=po.source_pr_id,
         source_pr_code=source_pr_code,
+        cost_center_id=po.cost_center_id,
+        cost_center=cc_label,
+        received_value=round(float(received_value), 2),
+        price_variance=round(float(received_value) - float(ordered_value), 2),
         lines=[
             PoLineOut(
                 id=line.id,
@@ -607,6 +642,7 @@ async def create_purchase_order(
         supplier_id=payload.supplier_id,
         status=workflow.DRAFT,
         order_date=local_today(),
+        cost_center_id=payload.cost_center_id,
         expected_date=payload.expected_date,
         total=total,
         payment_status="Unpaid",
@@ -764,6 +800,7 @@ async def convert_pr_to_po(
             total=total,
             payment_status="Unpaid",
             source_pr_id=pr.id,
+            cost_center_id=pr.cost_center_id,
             created_by=user.id,
         )
         db.add(po)
@@ -812,6 +849,8 @@ class GrnIn(BaseModel):
     date: DateType | None = None
     notes: str | None = None
     lines: list[GrnLineIn]
+    # Why the invoiced price differs from the order; required to submit when it does.
+    variance_note: str | None = None
     # True = create and submit in one step (stock is posted immediately);
     # False = save as a Draft with no stock effect.
     submit: bool = False
@@ -827,6 +866,7 @@ class GrnLineOut(BaseModel):
     ordered_price: float
     price: float
     line_total: float
+    variance: float  # (actual - ordered price) x received quantity
     expiry: date | None
     batch_label: str | None
 
@@ -844,6 +884,9 @@ class GrnOut(BaseModel):
     receiving_cost_center: str
     notes: str | None
     total: float
+    variance_total: float
+    has_variance: bool
+    variance_note: str | None
     received_by_name: str | None = None
     submitted_by_name: str | None = None
     submitted_at: datetime | None = None
@@ -887,6 +930,7 @@ async def _grn_outs(db: AsyncSession, grns: list[Grn]) -> list[GrnOut]:
                 id=l.id, po_line_id=l.po_line_id, name=l.name, ordered_qty=float(l.ordered_qty),
                 received_qty=float(l.received_qty), unit=l.unit, ordered_price=float(l.ordered_price),
                 price=float(l.price), line_total=round(float(l.received_qty) * float(l.price), 3),
+                variance=round(float(l.received_qty) * (float(l.price) - float(l.ordered_price)), 3),
                 expiry=l.expiry, batch_label=l.batch_label,
             )
             for l in by_grn.get(g.id, [])
@@ -897,7 +941,10 @@ async def _grn_outs(db: AsyncSession, grns: list[Grn]) -> list[GrnOut]:
                 supplier_id=g.supplier_id, supplier_name=suppliers.get(g.supplier_id), date=g.date,
                 receiving_cost_center_id=g.receiving_cost_center_id,
                 receiving_cost_center=labels.get(g.receiving_cost_center_id, "-"), notes=g.notes,
-                total=round(sum(l.line_total for l in gl), 2), received_by_name=names.get(g.received_by),
+                total=round(sum(l.line_total for l in gl), 2),
+                variance_total=round(sum(l.variance for l in gl), 2),
+                has_variance=any(abs(l.price - l.ordered_price) > EPS for l in gl), variance_note=g.variance_note,
+                received_by_name=names.get(g.received_by),
                 submitted_by_name=names.get(g.submitted_by), submitted_at=g.submitted_at,
                 approved_by_name=names.get(g.approved_by), approved_at=g.approved_at,
                 closed_by_name=names.get(g.closed_by), closed_at=g.closed_at, lines=gl,
@@ -991,7 +1038,7 @@ async def receive_goods(
     grn = Grn(
         code=await _next_code(db, Grn, "GRN", 2001), po_id=po.id, supplier_id=po.supplier_id,
         date=payload.date or local_today(), receiving_cost_center_id=payload.receiving_cost_center_id,
-        notes=payload.notes, received_by=user.id,
+        notes=payload.notes, variance_note=(payload.variance_note or "").strip() or None, received_by=user.id,
     )
     db.add(grn)
     await db.flush()
@@ -1020,6 +1067,7 @@ async def update_grn(
     grn.date, grn.receiving_cost_center_id, grn.notes = (
         payload.date or grn.date, payload.receiving_cost_center_id, payload.notes,
     )
+    grn.variance_note = (payload.variance_note or "").strip() or None
     await db.execute(delete(GrnLine).where(GrnLine.grn_id == grn.id))
     await _write_grn_lines(db, grn, resolved)
     await db.flush()
@@ -1047,6 +1095,11 @@ async def _post_grn(db: AsyncSession, grn: Grn, user: User) -> None:
     lines = (await db.execute(select(GrnLine).where(GrnLine.grn_id == grn.id))).scalars().all()
     if not lines:
         raise HTTPException(400, "Enter a received quantity for at least one item before submitting")
+    differing = [l.name for l in lines if abs(float(l.price) - float(l.ordered_price)) > EPS]
+    if differing and not (grn.variance_note or "").strip():
+        raise HTTPException(
+            400, f"Price differs from the order for {', '.join(differing)}: enter the reason in the price variance note before submitting"
+        )
     receipt_total = 0.0
     for line in lines:
         po_line = await db.get(PoLine, line.po_line_id) if line.po_line_id else None
@@ -1076,6 +1129,7 @@ async def _post_grn(db: AsyncSession, grn: Grn, user: User) -> None:
             db, stock_type=item.stock_type, stock_id=item.stock_id, cc_id=grn.receiving_cost_center_id,
             qty=float(line.received_qty), unit_cost=float(line.price), txn_type="GRN", txn_id=grn.id,
             txn_code=grn.code, user=user, batch_label=line.batch_label, expiry=line.expiry, received_date=grn.date,
+            on=grn.date,
         )
 
     await db.flush()
@@ -1089,6 +1143,7 @@ async def _post_grn(db: AsyncSession, grn: Grn, user: User) -> None:
             category="Residence Purchases", amount=round(receipt_total, 2), date=grn.date,
             supplier=supplier.name if supplier else None, method="Bank Transfer",
             notes=f"Auto-logged from {grn.code} — {po.code}", created_by=user.id,
+            cost_center_id=grn.receiving_cost_center_id, grn_id=grn.id,
         )
     )
 
@@ -1105,7 +1160,9 @@ async def _unpost_grn(db: AsyncSession, grn: Grn, user: User) -> None:
     if po:
         await db.flush()
         await _refresh_po_status(db, po)
-    await db.execute(delete(Expense).where(Expense.notes.like(f"Auto-logged from {grn.code} %")))
+    await db.execute(
+        delete(Expense).where(or_(Expense.grn_id == grn.id, Expense.notes.like(f"Auto-logged from {grn.code} %")))
+    )
 
 
 workflow.register(

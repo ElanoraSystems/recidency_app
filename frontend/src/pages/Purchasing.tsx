@@ -9,10 +9,11 @@ import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Sp
 import { addDays, fmtDate, todayIso } from "../lib/date";
 import type { CostCenter, CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, Supplier, TxnStatus, UnitOfMeasureEntry, PriceHistoryEntry } from "../types";
 
-interface GrnLine { id: string; name: string; ordered_qty: number; received_qty: number; unit: string; ordered_price: number; price: number; line_total: number; expiry: string | null; batch_label: string | null }
+interface GrnLine { id: string; name: string; ordered_qty: number; received_qty: number; unit: string; ordered_price: number; price: number; line_total: number; variance: number; expiry: string | null; batch_label: string | null }
 interface Grn {
   id: string; code: string; status: TxnStatus; po_id: string; po_code: string | null; supplier_id: string; supplier_name: string | null
   date: string; receiving_cost_center_id: string; receiving_cost_center: string; notes: string | null; total: number
+  variance_total: number; has_variance: boolean; variance_note: string | null
   received_by_name: string | null; lines: GrnLine[]
 }
 
@@ -638,7 +639,7 @@ function OrdersTab() {
 
       {!filtered || filtered.length === 0 ? <EmptyState label="No purchase orders match these filters." /> : (
       <Table>
-        <thead><tr><Th>PO</Th><Th>Supplier</Th><Th>Items</Th><Th>Ordered</Th><Th>Expected</Th><Th>Total</Th><Th>Status</Th><Th>Payment</Th><Th>{" "}</Th></tr></thead>
+        <thead><tr><Th>PO</Th><Th>Supplier</Th><Th>Cost center</Th><Th>Items</Th><Th>Ordered</Th><Th>Expected</Th><Th>Total</Th><Th>Status</Th><Th>Payment</Th><Th>{" "}</Th></tr></thead>
         <tbody>
           {filtered.map((po) => {
             const recv = po.lines.reduce((s, l) => s + l.received_qty, 0);
@@ -647,6 +648,7 @@ function OrdersTab() {
               <tr key={po.id} className="cursor-pointer" onClick={() => setDetailId(po.id)}>
                 <Td className="font-medium">{po.code}</Td>
                 <Td>{supplierName(po.supplier_id)}</Td>
+                <Td>{po.cost_center ?? "—"}</Td>
                 <Td className="text-xs" style={{ color: "var(--ink-500)" }}>{po.lines.length} item(s) · {recv}/{ord} recv.</Td>
                 <Td>{fmtDate(po.order_date)}</Td>
                 <Td>{po.expected_date ? fmtDate(po.expected_date) : "—"}</Td>
@@ -721,6 +723,11 @@ function OrdersTab() {
               <InfoRow label="Expected" value={detail.expected_date ? fmtDate(detail.expected_date) : "—"} />
               <InfoRow label="Total" value={`KWD ${detail.total.toFixed(2)}`} />
               <InfoRow label="Source request" value={detail.source_pr_code ?? "Direct order"} />
+              <InfoRow label="Cost center" value={detail.cost_center ?? "—"} />
+              {detail.received_value > 0 && <InfoRow label="Invoiced so far" value={`KWD ${detail.received_value.toFixed(2)}`} />}
+              {Math.abs(detail.price_variance) > 0.004 && (
+                <InfoRow label="Price variance vs order" value={`${detail.price_variance > 0 ? "+" : ""}KWD ${detail.price_variance.toFixed(2)}`} />
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={() => downloadPoPdf(detail)}>Download PDF</Button>
@@ -759,9 +766,10 @@ export function ReceiveGoodsPage() {
   const [batchLabels, setBatchLabels] = useState<Record<string, string>>({});
   // Stock is registered at the receiving cost center — mandatory, no default.
   const { data: costCenters } = useList<CostCenter>("cost-centers", "/kitchen/cost-centers");
-  const [costCenterId, setCostCenterId] = useState("");
+  const [chosenCostCenter, setChosenCostCenter] = useState("");
   const [date, setDate] = useState(todayIso());
   const [notes, setNotes] = useState("");
+  const [varianceNote, setVarianceNote] = useState("");
 
   useEffect(() => {
     if (!po || Object.keys(qtys).length > 0) return;
@@ -774,6 +782,13 @@ export function ReceiveGoodsPage() {
     return itemMaster?.find((im) => im.id === l.item_master_id)?.stock_type === "food";
   }
 
+  // Defaults to the cost center the order was raised for; goods can still be
+  // received into a different one.
+  const costCenterId = chosenCostCenter || po?.cost_center_id || "";
+  const receivingLines = pending.filter((l) => (qtys[l.id] ?? 0) > 0);
+  const hasVariance = receivingLines.some((l) => Math.abs((prices[l.id] ?? l.price) - l.price) > 0.0005);
+  const varianceValue = receivingLines.reduce((sum, l) => sum + (qtys[l.id] ?? 0) * ((prices[l.id] ?? l.price) - l.price), 0);
+
   const receive = useMutation({
     mutationFn: async (submit: boolean) =>
       api.post("/purchasing/grns", {
@@ -781,6 +796,7 @@ export function ReceiveGoodsPage() {
         receiving_cost_center_id: costCenterId,
         date,
         notes: notes || null,
+        variance_note: hasVariance ? varianceNote : null,
         submit,
         lines: pending
           .filter((l) => (qtys[l.id] ?? 0) > 0)
@@ -823,7 +839,7 @@ export function ReceiveGoodsPage() {
           <label className="flex flex-col gap-1 font-medium">
             Receiving cost center *
             <select
-              required value={costCenterId} onChange={(e) => setCostCenterId(e.target.value)}
+              required value={costCenterId} onChange={(e) => setChosenCostCenter(e.target.value)}
               className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
             >
               <option value="">Select where stock is received…</option>
@@ -902,9 +918,26 @@ export function ReceiveGoodsPage() {
             })}
           </tbody>
         </Table>
+        {hasVariance && (
+          <div className="flex flex-col gap-1.5 rounded-xl border p-3" style={{ borderColor: "var(--status-warning)" }}>
+            <div className="font-semibold">
+              Price differs from the order: {varianceValue >= 0 ? "+" : ""}KWD {varianceValue.toFixed(2)} in total
+            </div>
+            <label className="flex flex-col gap-1 font-medium">Reason for the price difference *
+              <input
+                type="text" value={varianceNote} onChange={(e) => setVarianceNote(e.target.value)}
+                placeholder="e.g. supplier raised the price, invoice attached"
+                className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
+              />
+            </label>
+            <span className="text-[12px]" style={{ color: "var(--ink-500)" }}>
+              The receipt is then sent to an approver. The purchase order itself keeps the ordered prices.
+            </span>
+          </div>
+        )}
         {receive.isError && <p style={{ color: "var(--status-critical)" }}>{errorText(receive.error)}</p>}
         <div className="flex gap-2">
-          <Button onClick={() => receive.mutate(true)} disabled={receive.isPending || !costCenterId}>
+          <Button onClick={() => receive.mutate(true)} disabled={receive.isPending || !costCenterId || (hasVariance && !varianceNote.trim())}>
             {receive.isPending ? "Posting..." : "Receive & Submit"}
           </Button>
           <Button variant="secondary" onClick={() => receive.mutate(false)} disabled={receive.isPending || !costCenterId}>
@@ -926,13 +959,20 @@ function GoodsReceivedTab() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [supplierFilter, setSupplierFilter] = useState("");
+  const [varianceOnly, setVarianceOnly] = useState(false);
   const supplierName = (id: string) => suppliers?.find((s) => s.id === id)?.name ?? "—";
   const poCode = (id: string) => orders?.find((o) => o.id === id)?.code ?? id.slice(0, 8);
   const filtered = grns?.filter((g) =>
     (!dateFrom || g.date >= dateFrom) &&
     (!dateTo || g.date <= dateTo) &&
-    (!supplierFilter || g.supplier_id === supplierFilter)
+    (!supplierFilter || g.supplier_id === supplierFilter) &&
+    (!varianceOnly || g.has_variance)
   );
+  // Receipts value by the cost center that received them (drafts excluded).
+  const spendByCostCenter = new Map<string, number>();
+  for (const g of filtered ?? []) {
+    if (g.status !== "Draft") spendByCostCenter.set(g.receiving_cost_center, (spendByCostCenter.get(g.receiving_cost_center) ?? 0) + g.total);
+  }
 
   if (isLoading) return <Spinner />;
 
@@ -945,11 +985,22 @@ function GoodsReceivedTab() {
           <option value="">All suppliers</option>
           {suppliers?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
+        <label className="flex items-center gap-1.5 text-[13px]">
+          <input type="checkbox" checked={varianceOnly} onChange={(e) => setVarianceOnly(e.target.checked)} />
+          Price variance only
+        </label>
       </div>
+      {spendByCostCenter.size > 0 && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {[...spendByCostCenter.entries()].sort().map(([cc, total]) => (
+            <Badge key={cc}>{cc}: KWD {total.toFixed(2)}</Badge>
+          ))}
+        </div>
+      )}
 
       {!filtered || filtered.length === 0 ? <EmptyState label="No goods received match these filters." /> : (
       <Table>
-        <thead><tr><Th>GRN</Th><Th>Date</Th><Th>PO</Th><Th>Supplier</Th><Th>Cost center</Th><Th>Lines</Th><Th>Value</Th><Th>Status</Th></tr></thead>
+        <thead><tr><Th>GRN</Th><Th>Date</Th><Th>PO</Th><Th>Supplier</Th><Th>Cost center</Th><Th>Lines</Th><Th>Value</Th><Th>Price variance</Th><Th>Status</Th></tr></thead>
         <tbody>
           {filtered.map((g) => (
             <tr key={g.id} className="cursor-pointer" onClick={() => setDetailId(g.id)}>
@@ -960,6 +1011,11 @@ function GoodsReceivedTab() {
               <Td>{g.receiving_cost_center}</Td>
               <Td>{g.lines.length}</Td>
               <Td>KWD {g.total.toFixed(2)}</Td>
+              <Td>
+                {g.has_variance
+                  ? <span style={{ color: "var(--status-warning)", fontWeight: 600 }}>{g.variance_total > 0 ? "+" : ""}{g.variance_total.toFixed(2)}</span>
+                  : "—"}
+              </Td>
               <Td><StatusBadge status={g.status} /></Td>
             </tr>
           ))}
@@ -981,7 +1037,13 @@ function GoodsReceivedTab() {
               <InfoRow label="Date" value={fmtDate(detail.date)} />
               <InfoRow label="Received by" value={detail.received_by_name ?? "—"} />
               <InfoRow label="Total" value={`KWD ${detail.total.toFixed(3)}`} />
+              {detail.has_variance && <InfoRow label="Price variance" value={`${detail.variance_total > 0 ? "+" : ""}KWD ${detail.variance_total.toFixed(3)}`} />}
             </div>
+            {detail.has_variance && (
+              <p className="rounded-lg px-3 py-2" style={{ background: "var(--status-warning-bg)" }}>
+                Invoiced at a different price from the order. Reason: {detail.variance_note ?? "none recorded"}
+              </p>
+            )}
             <Table>
               <thead><tr><Th>Item</Th><Th>Ordered</Th><Th>Received</Th><Th>Price</Th><Th>Line value</Th><Th>Batch</Th><Th>Expiry</Th></tr></thead>
               <tbody>

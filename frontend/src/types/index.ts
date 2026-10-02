@@ -147,7 +147,7 @@ export interface DashboardSummary {
 }
 
 export interface ApprovalItem {
-  type: "purchase_request" | "purchase_order" | "proposed_menu" | "asset" | "leave_request" | "task_review" | "maintenance_confirmation" | "weekly_meal_plan" | "waste_log";
+  type: "purchase_request" | "purchase_order" | "proposed_menu" | "asset" | "leave_request" | "task_review" | "maintenance_confirmation" | "weekly_meal_plan" | "waste_log" | "grn";
   id: string;
   title: string;
   sub: string;
@@ -391,6 +391,7 @@ export interface PurchaseRequest {
   approved_by_name: string | null;
   note: string | null;
   cost_center: string | null;
+  cost_center_id: string | null;
   lines: PurchaseRequestLine[];
   total_est_cost: number;
   po_codes: string[];
@@ -428,6 +429,10 @@ export interface PurchaseOrder {
   approved_by: string | null;
   source_pr_id: string | null;
   source_pr_code: string | null;
+  cost_center_id: string | null;
+  cost_center: string | null;
+  received_value: number; // invoiced on goods receipts so far
+  price_variance: number; // received_value minus the same quantities at ordered prices
   lines: PoLine[];
 }
 
@@ -675,4 +680,23 @@ export interface CostOfSalesRow {
   meals_value: number;
   waste_value: number;
   count_variance: number;
+}
+
+export interface PeriodStatus {
+  period: string;
+  closed: boolean;
+  closed_at: string | null;
+  closed_by_name: string | null;
+  reopened_at: string | null;
+  reopen_reason: string | null;
+  counted_centers: string[];
+  uncounted_centers: string[];
+}
+
+export interface RecipeCostPoint {
+  at: string;
+  total_cost: number;
+  cost_per_portion: number;
+  portions: number;
+  reason: string;
 }

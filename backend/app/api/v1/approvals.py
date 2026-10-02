@@ -14,7 +14,7 @@ from app.db.session import get_db
 from app.models.facilities import Asset, MaintenanceRequest
 from app.models.kitchen import ProposedMenu, WasteLog, WasteLogLine, WeeklyMealPlan
 from app.models.people import LeaveRequest, StaffProfile
-from app.models.purchasing import PurchaseOrder, PurchaseRequest, PurchaseRequestLine
+from app.models.purchasing import Grn, GrnLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine
 from app.models.tasks import Task, TaskChecklistItem, TaskComment
 from app.models.user import User
 from app.services import workflow
@@ -53,6 +53,23 @@ async def list_approvals(db: AsyncSession = Depends(get_db), user: User = Depend
             {
                 "type": "purchase_order", "id": po.id, "title": f"Purchase order — {po.code}",
                 "sub": f"Total {po.total}", "date": po.order_date.isoformat(),
+            }
+        )
+
+    # Goods receipts invoiced at a price different from the order need a
+    # sign-off from an approver (the reason is on the GRN).
+    grn_doctype = workflow.get_doctype("grn")
+    for grn in (await db.execute(select(Grn).where(Grn.status == workflow.SUBMITTED))).scalars().all():
+        lines = (await db.execute(select(GrnLine).where(GrnLine.grn_id == grn.id))).scalars().all()
+        variance = sum(float(l.received_qty) * (float(l.price) - float(l.ordered_price)) for l in lines)
+        if not any(abs(float(l.price) - float(l.ordered_price)) > 0.0005 for l in lines):
+            continue
+        if not await workflow.is_approver(db, user, grn, grn_doctype):
+            continue
+        out.append(
+            {
+                "type": "grn", "id": grn.id, "title": f"Goods receipt {grn.code} — price variance",
+                "sub": f"{variance:+.2f} vs ordered · {grn.variance_note or 'no reason given'}", "date": grn.date.isoformat(),
             }
         )
 
@@ -273,6 +290,17 @@ async def decide(
         new_status = await workflow.apply_action(
             db, workflow.get_doctype("purchase_request"), pr, "approve" if approve else "reject", user,
             None if approve else "Rejected from the approvals inbox",
+        )
+        await db.commit()
+        return {"ok": True, "status": new_status}
+
+    if item_type == "grn":
+        grn = await db.get(Grn, item_id)
+        if not grn:
+            raise HTTPException(404, "GRN not found")
+        new_status = await workflow.apply_action(
+            db, workflow.get_doctype("grn"), grn, "approve" if approve else "reject", user,
+            None if approve else "Price variance rejected from the approvals inbox",
         )
         await db.commit()
         return {"ok": True, "status": new_status}

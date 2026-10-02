@@ -200,6 +200,7 @@ async def submit_stock_count(
     if not count.cost_center_id:
         raise HTTPException(400, "This count has no location")
 
+    await stock.ensure_period_open(db, count.date)  # also guards the cost-of-sales snapshot
     txn_code = f"SC-{str(count.id)[:6].upper()}"
     lines = (await db.execute(select(StockCountLine).where(StockCountLine.count_id == count_id))).scalars().all()
     for line in lines:
@@ -214,13 +215,13 @@ async def submit_stock_count(
         if variance < 0:
             await stock.post_out(
                 db, stock_type=item.stock_type, stock_id=item.stock_id, cc_id=count.cost_center_id, qty=-variance,
-                txn_type="COUNT", txn_id=count.id, txn_code=txn_code, user=user,
+                txn_type="COUNT", txn_id=count.id, txn_code=txn_code, user=user, on=count.date,
             )
         else:
             await stock.post_in(
                 db, stock_type=item.stock_type, stock_id=item.stock_id, cc_id=count.cost_center_id, qty=variance,
                 unit_cost=float(line.unit_cost), txn_type="COUNT", txn_id=count.id, txn_code=txn_code, user=user,
-                batch_label="Count adjustment",
+                batch_label="Count adjustment", on=count.date,
             )
 
     count.status = "Submitted"

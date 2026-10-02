@@ -21,6 +21,7 @@ export function routeForApproval(type: ApprovalItem["type"]): string {
   switch (type) {
     case "purchase_request":
     case "purchase_order":
+    case "grn":
       return "/purchasing";
     case "proposed_menu":
     case "weekly_meal_plan":

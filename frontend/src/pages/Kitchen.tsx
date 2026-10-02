@@ -6,9 +6,9 @@ import { api } from "../api/client";
 import { useCreate, useList } from "../api/hooks";
 import { Icon } from "../components/icons";
 import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
-import { addDays, daysUntil, fmtDate, todayIso } from "../lib/date";
+import { addDays, daysUntil, fmtDate, fmtDateTime, todayIso } from "../lib/date";
 import { MealLogTab, TransferTab, WasteTab } from "./KitchenTransactions";
-import type { FoodInventoryBatchEntry, FoodInventoryItem, MealCategory, ProposedMenu, Recipe, RecipeIngredient, UnitOfMeasureEntry, WeeklyMealPlan, WeeklyMealPlanEntry } from "../types";
+import type { FoodInventoryBatchEntry, FoodInventoryItem, MealCategory, ProposedMenu, Recipe, RecipeCostPoint, RecipeIngredient, UnitOfMeasureEntry, WeeklyMealPlan, WeeklyMealPlanEntry } from "../types";
 
 const TABS = ["Meal Log", "Menu Proposals", "Staff Meal Plan", "Recipes", "Food Inventory", "Raw Material Transfer", "Waste Log"] as const;
 
@@ -141,6 +141,11 @@ export function RecipeDetailPage() {
     queryKey: ["recipe", id],
     queryFn: async () => (await api.get(`/kitchen/recipes/${id}`)).data,
     enabled: !!id,
+  });
+  const { data: costHistory } = useQuery<RecipeCostPoint[]>({
+    queryKey: ["recipe-cost-history", id, loaded?.cost.cost_per_portion],
+    queryFn: async () => (await api.get(`/kitchen/recipes/${id}/cost-history`)).data,
+    enabled: !!id && !!loaded,
   });
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   useEffect(() => {
@@ -428,6 +433,36 @@ export function RecipeDetailPage() {
           measured in grams of its finished yield) — its cost and stock consumption both recurse through its own
           ingredients automatically, all the way down.
         </p>
+
+        {costHistory && costHistory.length > 0 && (
+          <div>
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--ink-400)" }}>Cost history</div>
+            <p className="mb-2 text-[12px]" style={{ color: "var(--ink-400)" }}>
+              Costs above are today's. This records what the recipe cost each time it was saved or an ingredient's cost changed;
+              meals already served keep the cost of the stock actually used.
+            </p>
+            <Table>
+              <thead><tr><Th>Date</Th><Th>Cost / portion</Th><Th>Recipe total</Th><Th>Change</Th><Th>Why</Th></tr></thead>
+              <tbody>
+                {costHistory.slice(0, 12).map((h, i) => {
+                  const prev = costHistory[i + 1];
+                  const diff = prev ? h.cost_per_portion - prev.cost_per_portion : 0;
+                  return (
+                    <tr key={h.at + i}>
+                      <Td>{fmtDateTime(h.at)}</Td>
+                      <Td className="font-medium">KWD {h.cost_per_portion.toFixed(3)}</Td>
+                      <Td>KWD {h.total_cost.toFixed(3)}</Td>
+                      <Td style={{ color: diff > 0 ? "var(--status-critical)" : diff < 0 ? "var(--status-good)" : undefined }}>
+                        {prev ? `${diff > 0 ? "+" : ""}${diff.toFixed(3)}` : "—"}
+                      </Td>
+                      <Td>{h.reason}</Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div>

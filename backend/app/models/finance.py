@@ -37,6 +37,12 @@ class Expense(Base, UUIDPKMixin, TimestampMixin):
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # Set on expenses auto-logged from a goods receipt: which GRN it came from
+    # and the cost center that received the goods.
+    cost_center_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cost_centers.id", ondelete="SET NULL"), nullable=True
+    )
+    grn_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("grns.id", ondelete="SET NULL"), nullable=True)
 
 
 class Document(Base, UUIDPKMixin, TimestampMixin):

@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import { useList } from "../api/hooks";
 import { fmtDateTime } from "../lib/date";
-import type { CostCenter, CostOfSalesRow, StockBalances, StockMovementRow } from "../types";
-import { Badge, DateRangeFilter, EmptyState, Spinner, Table, Td, Th } from "./ui";
+import type { CostCenter, CostOfSalesRow, PeriodStatus, StockBalances, StockMovementRow } from "../types";
+import { errorText } from "./Workflow";
+import { Badge, Button, DateRangeFilter, EmptyState, Spinner, Table, Td, Th } from "./ui";
 
 const inputCls = "rounded-lg border px-2.5 py-1.5 text-sm";
 const inputStyle = { borderColor: "var(--border-strong)" };
@@ -170,6 +172,65 @@ const monthName = (period: string) =>
   new Date(period + "-01T00:00:00").toLocaleDateString("en-GB", { month: "short", year: "numeric" });
 const kwd = (n: number) => n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// Month-end close: closing recalculates the month's cost of sales from the
+// ledger and locks the month against further stock postings, so a reported
+// figure cannot move afterwards unless the owner reopens the month.
+function PeriodsPanel() {
+  const { user } = useAuth();
+  const isOwner = user?.user_type === "owner";
+  const qc = useQueryClient();
+  const { data } = useQuery<PeriodStatus[]>({
+    queryKey: ["stock-periods"],
+    queryFn: async () => (await api.get("/stock/periods")).data,
+  });
+  const act = useMutation({
+    mutationFn: async ({ period, close, reason }: { period: string; close: boolean; reason?: string }) =>
+      (await api.post(`/stock/periods/${period}/${close ? "close" : "reopen"}`, close ? {} : { reason })).data,
+    onSuccess: () => {
+      for (const k of ["stock-periods", "cost-of-sales"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+  if (!data || data.length === 0) return null;
+
+  function reopen(period: string) {
+    const reason = window.prompt(`Reason for reopening ${period}?`);
+    if (reason?.trim()) act.mutate({ period, close: false, reason });
+  }
+
+  return (
+    <div>
+      <h3 className="mb-2 text-[13px] font-semibold" style={{ color: "var(--ink-700)" }}>Month-end close</h3>
+      {act.isError && <p className="mb-2 text-[13px]" style={{ color: "var(--status-critical)" }}>{errorText(act.error)}</p>}
+      <Table>
+        <thead><tr><Th>Month</Th><Th>Status</Th><Th>Counted</Th><Th>Not counted</Th><Th>{" "}</Th></tr></thead>
+        <tbody>
+          {data.map((p) => (
+            <tr key={p.period}>
+              <Td className="font-medium">{monthName(p.period)}</Td>
+              <Td>
+                {p.closed
+                  ? <Badge tone="info">Closed{p.closed_by_name ? ` by ${p.closed_by_name}` : ""}</Badge>
+                  : <Badge tone="warning">{p.reopened_at ? "Reopened" : "Open"}</Badge>}
+              </Td>
+              <Td>{p.counted_centers.join(", ") || "—"}</Td>
+              <Td style={p.uncounted_centers.length ? { color: "var(--status-warning)" } : undefined}>{p.uncounted_centers.join(", ") || "—"}</Td>
+              <Td>
+                {isOwner && (p.closed
+                  ? <Button size="sm" variant="secondary" onClick={() => reopen(p.period)} disabled={act.isPending}>Reopen</Button>
+                  : <Button size="sm" onClick={() => act.mutate({ period: p.period, close: true })} disabled={act.isPending}>Close month</Button>)}
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+      <p className="mt-1.5 text-[12px]" style={{ color: "var(--ink-400)" }}>
+        Closing recalculates the month's cost of sales and blocks any stock posting dated in it (including reopening a document from it).
+        Only the owner can close or reopen a month. Cost centers with activity but no count are flagged so they can be counted first.
+      </p>
+    </div>
+  );
+}
+
 // Monthly cost of sales per cost center. A row is written each time a stock
 // count is submitted, so this is the permanent month-by-month history.
 export function CostOfSalesTab() {
@@ -193,6 +254,7 @@ export function CostOfSalesTab() {
 
   return (
     <div className="flex flex-col gap-5">
+      <PeriodsPanel />
       <p className="text-[12.5px]" style={{ color: "var(--ink-500)" }}>
         Cost of sales = opening stock + purchases + transfers in - transfers out - closing stock, valued at cost from the
         stock ledger. It is calculated and saved for the cost center each time a monthly stock count is submitted (count

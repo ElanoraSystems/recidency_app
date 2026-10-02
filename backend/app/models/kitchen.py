@@ -152,8 +152,8 @@ class MealLogLine(Base, UUIDPKMixin):
     dish: Mapped[str] = mapped_column(String(200))
     qty: Mapped[int] = mapped_column(Integer)
     unit: Mapped[str] = mapped_column(String(20), default="portion")
-    # Cost per portion; refreshed from the recipe's live cost when the
-    # transaction is submitted, then frozen as the invoice figure.
+    # Cost per portion; on submit it becomes the cost of the stock actually
+    # drawn (batch costs from the ledger) and is then frozen as the invoice figure.
     unit_cost: Mapped[float] = mapped_column(Numeric(10, 3), default=0)
 
 

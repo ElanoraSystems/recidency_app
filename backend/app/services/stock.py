@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.clock import local_today
 from app.models.kitchen import CostCenter, FoodInventory, FoodInventoryBatch
 from app.models.purchasing import Inventory
-from app.models.stock import InventoryBalance, StockMovement
+from app.models.stock import InventoryBalance, PeriodClose, StockMovement
 from app.models.user import User
 
 EPS = 0.0005  # quantities are stored to 3 decimals
@@ -28,6 +28,16 @@ class InsufficientStock(HTTPException):
             409,
             f"Insufficient stock of {item} at {location}: {available:g} available, {needed:g} needed",
         )
+
+
+async def ensure_period_open(db: AsyncSession, on: date) -> None:
+    """Postings into a closed month are refused; the owner must reopen it."""
+    period = on.strftime("%Y-%m")
+    closed = (
+        await db.execute(select(PeriodClose.id).where(PeriodClose.period == period, PeriodClose.closed))
+    ).first()
+    if closed:
+        raise HTTPException(409, f"{period} is closed - the owner must reopen that month before anything can post into it")
 
 
 def _q(value: float) -> float:
@@ -65,11 +75,17 @@ async def recompute_food_rollup(db: AsyncSession, food_inventory_id: uuid.UUID) 
     ).scalars().all()
     total_qty = sum(float(b.qty) for b in batches)
     total_value = sum(float(b.qty) * float(b.cost) for b in batches)
+    old_cost = float(stock.cost or 0)
     stock.qty = total_qty
     stock.cost = (total_value / total_qty) if total_qty > 0 else 0.0
     soonest = min((b for b in batches if b.expiry is not None), key=lambda b: b.expiry, default=None)
     stock.expiry = soonest.expiry if soonest else None
     stock.batch = soonest.batch_label if soonest else None
+    if abs(float(stock.cost) - old_cost) > 0.0005:
+        # Recipes using this ingredient now cost differently: keep a history.
+        from app.services.recipe_costing import snapshot_for_food
+
+        await snapshot_for_food(db, food_inventory_id, "Ingredient cost changed")
 
 
 async def recompute_general_total(db: AsyncSession, inventory_id: uuid.UUID) -> None:
@@ -152,13 +168,14 @@ async def _locked_balance(db: AsyncSession, inventory_id: uuid.UUID, cc_id: uuid
 
 def _movement(
     *, txn_type, txn_id, txn_code, stock_type, stock_id, item, from_cc, to_cc, qty, unit_cost, user,
-    batch_id=None, source_batch_id=None,
+    batch_id=None, source_batch_id=None, on: date | None = None,
 ) -> StockMovement:
     return StockMovement(
         txn_type=txn_type, txn_id=txn_id, txn_code=txn_code, stock_type=stock_type, stock_id=stock_id,
         item_name=item.name, unit=item.unit, from_cost_center_id=from_cc, to_cost_center_id=to_cc, qty=qty,
         unit_cost=unit_cost, total_value=round(qty * unit_cost, 4), batch_id=batch_id,
         source_batch_id=source_batch_id, user_id=user.id if user else None, status="Posted",
+        posting_date=on or local_today(),
     )
 
 
@@ -167,7 +184,9 @@ async def post_in(
     db: AsyncSession, *, stock_type: str, stock_id: uuid.UUID, cc_id: uuid.UUID, qty: float,
     unit_cost: float, txn_type: str, txn_id: uuid.UUID | None, txn_code: str | None, user: User | None,
     batch_label: str | None = None, expiry: date | None = None, received_date: date | None = None,
+    on: date | None = None,
 ) -> StockMovement:
+    await ensure_period_open(db, on or local_today())
     qty = _q(qty)
     if qty <= 0:
         raise HTTPException(400, "Quantity must be greater than zero")
@@ -186,7 +205,7 @@ async def post_in(
         bal.qty = _q(float(bal.qty) + qty)
     movement = _movement(
         txn_type=txn_type, txn_id=txn_id, txn_code=txn_code, stock_type=stock_type, stock_id=stock_id,
-        item=item, from_cc=None, to_cc=cc_id, qty=qty, unit_cost=unit_cost, user=user, batch_id=batch_id,
+        item=item, from_cc=None, to_cc=cc_id, qty=qty, unit_cost=unit_cost, user=user, batch_id=batch_id, on=on,
     )
     db.add(movement)
     await db.flush()
@@ -196,10 +215,11 @@ async def post_in(
 
 async def post_out(
     db: AsyncSession, *, stock_type: str, stock_id: uuid.UUID, cc_id: uuid.UUID, qty: float,
-    txn_type: str, txn_id: uuid.UUID | None, txn_code: str | None, user: User | None,
+    txn_type: str, txn_id: uuid.UUID | None, txn_code: str | None, user: User | None, on: date | None = None,
 ) -> list[StockMovement]:
     """Takes stock out of one location (earliest-expiring food batches first).
     Raises InsufficientStock, writing nothing, if the location has too little."""
+    await ensure_period_open(db, on or local_today())
     qty = _q(qty)
     if qty <= 0:
         raise HTTPException(400, "Quantity must be greater than zero")
@@ -221,7 +241,7 @@ async def post_out(
                 _movement(
                     txn_type=txn_type, txn_id=txn_id, txn_code=txn_code, stock_type=stock_type,
                     stock_id=stock_id, item=item, from_cc=cc_id, to_cc=None, qty=take,
-                    unit_cost=float(batch.cost), user=user, batch_id=batch.id,
+                    unit_cost=float(batch.cost), user=user, batch_id=batch.id, on=on,
                 )
             )
     else:
@@ -232,7 +252,7 @@ async def post_out(
         movements.append(
             _movement(
                 txn_type=txn_type, txn_id=txn_id, txn_code=txn_code, stock_type=stock_type, stock_id=stock_id,
-                item=item, from_cc=cc_id, to_cc=None, qty=qty, unit_cost=float(item.avg_price), user=user,
+                item=item, from_cc=cc_id, to_cc=None, qty=qty, unit_cost=float(item.avg_price), user=user, on=on,
             )
         )
     db.add_all(movements)
@@ -244,11 +264,13 @@ async def post_out(
 async def post_transfer(
     db: AsyncSession, *, stock_type: str, stock_id: uuid.UUID, from_cc: uuid.UUID, to_cc: uuid.UUID,
     qty: float, txn_type: str, txn_id: uuid.UUID | None, txn_code: str | None, user: User | None,
+    on: date | None = None,
 ) -> list[StockMovement]:
     """Moves stock between two locations. Batches keep their cost, expiry and
     label at the destination, so company-wide qty and value are unchanged."""
     if from_cc == to_cc:
         raise HTTPException(400, "From and To cost centers must be different")
+    await ensure_period_open(db, on or local_today())
     qty = _q(qty)
     if qty <= 0:
         raise HTTPException(400, "Quantity must be greater than zero")
@@ -300,7 +322,7 @@ async def post_transfer(
                 _movement(
                     txn_type=txn_type, txn_id=txn_id, txn_code=txn_code, stock_type=stock_type,
                     stock_id=stock_id, item=item, from_cc=from_cc, to_cc=to_cc, qty=take,
-                    unit_cost=float(batch.cost), user=user, batch_id=dest.id, source_batch_id=batch.id,
+                    unit_cost=float(batch.cost), user=user, batch_id=dest.id, source_batch_id=batch.id, on=on,
                 )
             )
     else:
@@ -313,7 +335,7 @@ async def post_transfer(
         movements.append(
             _movement(
                 txn_type=txn_type, txn_id=txn_id, txn_code=txn_code, stock_type=stock_type, stock_id=stock_id,
-                item=item, from_cc=from_cc, to_cc=to_cc, qty=qty, unit_cost=float(item.avg_price), user=user,
+                item=item, from_cc=from_cc, to_cc=to_cc, qty=qty, unit_cost=float(item.avg_price), user=user, on=on,
             )
         )
     db.add_all(movements)
@@ -345,6 +367,8 @@ async def reverse_txn(db: AsyncSession, txn_id: uuid.UUID, user: User | None) ->
             )
         ).scalars().all()
     )
+    for posting_date in {m.posting_date for m in originals}:
+        await ensure_period_open(db, posting_date)
     touched: set[tuple[str, uuid.UUID]] = set()
     reversals: list[StockMovement] = []
     for m in originals:
@@ -393,7 +417,7 @@ async def reverse_txn(db: AsyncSession, txn_id: uuid.UUID, user: User | None) ->
                 from_cost_center_id=m.to_cost_center_id, to_cost_center_id=m.from_cost_center_id,
                 qty=m.qty, unit_cost=m.unit_cost, total_value=m.total_value, batch_id=m.batch_id,
                 source_batch_id=m.source_batch_id, user_id=user.id if user else None, status="Posted",
-                reverses_id=m.id,
+                reverses_id=m.id, posting_date=m.posting_date,
             )
         )
         m.status = "Reversed"

@@ -156,6 +156,11 @@ class PurchaseRequest(Base, UUIDPKMixin, TimestampMixin, WorkflowMixin):
     # request is charged to. Required for a new request; nullable so
     # requests created before this field existed stay valid.
     cost_center: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # The real cost center behind that label; `cost_center` stays as the
+    # display snapshot. Carried onto the purchase orders made from this request.
+    cost_center_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cost_centers.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class PurchaseRequestLine(Base, UUIDPKMixin):
@@ -189,6 +194,9 @@ class PurchaseOrder(Base, UUIDPKMixin, TimestampMixin, WorkflowMixin):
     payment_status: Mapped[str] = mapped_column(String(20), default="Unpaid")
     source_pr_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("purchase_requests.id", ondelete="SET NULL"), nullable=True
+    )
+    cost_center_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cost_centers.id", ondelete="SET NULL"), nullable=True
     )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -225,6 +233,8 @@ class Grn(Base, UUIDPKMixin, TimestampMixin, WorkflowMixin):
         ForeignKey("cost_centers.id", ondelete="RESTRICT")
     )
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Required when any line was invoiced at a price different from the order.
+    variance_note: Mapped[str | None] = mapped_column(String, nullable=True)
     received_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

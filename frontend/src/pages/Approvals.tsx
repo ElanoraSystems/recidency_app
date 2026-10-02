@@ -18,6 +18,7 @@ const TYPE_LABELS: Record<ApprovalItem["type"], string> = {
   maintenance_confirmation: "Maintenance Confirmation",
   weekly_meal_plan: "Weekly Meal Plan",
   waste_log: "Kitchen Waste Log",
+  grn: "Goods Receipt (price variance)",
 };
 
 const REVIEW_LABELS: Record<ApprovalItem["type"], string> = {
@@ -30,6 +31,7 @@ const REVIEW_LABELS: Record<ApprovalItem["type"], string> = {
   maintenance_confirmation: "View",
   weekly_meal_plan: "View",
   waste_log: "View",
+  grn: "View",
 };
 
 const TABS = ["Approval Inbox", "Activity Log"] as const;
