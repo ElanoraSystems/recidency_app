@@ -16,6 +16,7 @@ from app.models.people import LeaveRequest, StaffProfile
 from app.models.purchasing import PurchaseOrder, PurchaseRequest, PurchaseRequestLine
 from app.models.tasks import Task, TaskChecklistItem, TaskComment
 from app.models.user import User
+from app.services import workflow
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
@@ -138,19 +139,19 @@ async def list_approvals(db: AsyncSession = Depends(get_db), user: User = Depend
         )
 
     waste_logs = (
-        await db.execute(select(WasteLog).where(WasteLog.status == "Pending Review"))
+        await db.execute(select(WasteLog).where(WasteLog.status == workflow.SUBMITTED))
     ).scalars().all()
+    waste_doctype = workflow.get_doctype("waste_log")
     for waste in waste_logs:
-        # Same per-user visibility rule as task_review — only the logger's
-        # supervisor (or the Owner) should be pinged, not every user.
-        if not await _can_review_waste(db, user, waste):
+        # Only approvers (owner, manager, the logger's supervisor) are pinged.
+        if not await workflow.is_approver(db, user, waste, waste_doctype):
             continue
         line_count = (
             await db.execute(select(WasteLogLine).where(WasteLogLine.waste_log_id == waste.id))
         ).scalars().all()
         out.append(
             {
-                "type": "waste_log", "id": waste.id, "title": f"Waste log — {waste.reason}",
+                "type": "waste_log", "id": waste.id, "title": f"Waste log {waste.code} — {waste.reason}",
                 "sub": f"{len(line_count)} item(s) logged", "date": waste.date.isoformat(),
             }
         )
@@ -196,28 +197,6 @@ async def _can_review_task(db: AsyncSession, user: User, task: Task) -> bool:
 async def _authorize_task_review(db: AsyncSession, user: User, task: Task) -> None:
     if not await _can_review_task(db, user, task):
         raise HTTPException(403, "Only this staff member's supervisor (or the Owner) can review this task")
-
-
-async def _can_review_waste(db: AsyncSession, user: User, waste: WasteLog) -> bool:
-    """Whether `user` is the logger's defined supervisor, or the Owner —
-    same shape as _can_review_task, just keyed off who logged the waste
-    entry rather than who was assigned the task."""
-    if user.user_type == "owner":
-        return True
-    if not waste.logged_by:
-        return False
-    logger_profile = (
-        await db.execute(select(StaffProfile).where(StaffProfile.user_id == waste.logged_by))
-    ).scalar_one_or_none()
-    reviewer_profile = (
-        await db.execute(select(StaffProfile).where(StaffProfile.user_id == user.id))
-    ).scalar_one_or_none()
-    return bool(logger_profile and reviewer_profile and logger_profile.supervisor_id == reviewer_profile.id)
-
-
-async def _authorize_waste_review(db: AsyncSession, user: User, waste: WasteLog) -> None:
-    if not await _can_review_waste(db, user, waste):
-        raise HTTPException(403, "Only this staff member's supervisor (or the Owner) can review this waste log")
 
 
 def _authorize_maintenance_confirmation(user: User, req: MaintenanceRequest) -> None:
@@ -293,17 +272,16 @@ async def decide(
         waste = await db.get(WasteLog, item_id)
         if not waste:
             raise HTTPException(404, "Waste log not found")
-        if waste.status != "Pending Review":
-            raise HTTPException(400, "This waste log is not awaiting review")
-        await _authorize_waste_review(db, user, waste)
-        # No inventory reversal on reject — the stock is already gone
-        # regardless of whether the paperwork was accurate; rejecting just
-        # flags the record for follow-up.
-        waste.status = "Reviewed" if approve else "Flagged"
-        waste.reviewed_by = user.id
-        await log_activity(db, user, "Reviewed waste log" if approve else "Flagged waste log", waste.reason)
+        # Approve signs it off; reject reverses the stock deduction and
+        # returns it to Draft (see app/services/workflow.py).
+        new_status = await workflow.apply_action(
+            db, workflow.get_doctype("waste_log"), waste, "approve" if approve else "reject", user,
+            None if approve else "Rejected from the approvals inbox",
+        )
+        if approve:
+            waste.reviewed_by = user.id
         await db.commit()
-        return {"ok": True, "status": waste.status}
+        return {"ok": True, "status": new_status}
 
     if item_type not in DECISION_MODELS:
         raise HTTPException(404, "Unknown approval type")

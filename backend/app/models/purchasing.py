@@ -4,7 +4,7 @@ from datetime import date
 from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, TimestampMixin, UUIDPKMixin
+from app.db.base import Base, TimestampMixin, UUIDPKMixin, WorkflowMixin
 
 
 class UnitOfMeasure(Base, UUIDPKMixin):
@@ -114,6 +114,10 @@ class StockCount(Base, UUIDPKMixin, TimestampMixin):
 
     date: Mapped[date] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(20), default="Draft")  # Draft | Submitted
+    # The location being counted; book_qty is that location's balance.
+    cost_center_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cost_centers.id", ondelete="RESTRICT"), nullable=True
+    )
     counted_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -203,13 +207,18 @@ class PoLine(Base, UUIDPKMixin):
     received_qty: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
 
 
-class Grn(Base, UUIDPKMixin, TimestampMixin):
+class Grn(Base, UUIDPKMixin, TimestampMixin, WorkflowMixin):
     __tablename__ = "grns"
 
     code: Mapped[str] = mapped_column(String(20), unique=True)  # GRN-2001
     po_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("purchase_orders.id"))
     supplier_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("suppliers.id"))
     date: Mapped[date] = mapped_column(Date)
+    # Where the goods are physically received; stock is registered here.
+    receiving_cost_center_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("cost_centers.id", ondelete="RESTRICT")
+    )
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
     received_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -233,3 +242,7 @@ class GrnLine(Base, UUIDPKMixin):
     # delivery; `price == ordered_price` means no adjustment happened.
     ordered_price: Mapped[float] = mapped_column(Numeric(10, 3))
     price: Mapped[float] = mapped_column(Numeric(10, 3))
+    # Food lots only; recorded on the GRN itself so the document is
+    # self-contained (the batch row is what stock actually draws from).
+    expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
+    batch_label: Mapped[str | None] = mapped_column(String(40), nullable=True)

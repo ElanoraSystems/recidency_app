@@ -1,17 +1,17 @@
 import uuid
 from datetime import date, datetime
+from datetime import date as DateType
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_module
-from app.api.v1.kitchen import _recompute_food_rollup
 from app.crud.activity import log_activity
 from app.db.session import get_db
 from app.models.finance import Expense, ResidenceSettings
-from app.models.kitchen import FoodInventory, FoodInventoryBatch
+from app.models.kitchen import CostCenter, FoodInventory
 from app.models.purchasing import (
     Grn,
     GrnLine,
@@ -24,6 +24,8 @@ from app.models.purchasing import (
     Supplier,
 )
 from app.models.user import User
+from app.services import audit, stock, workflow
+from app.services.codes import next_code as _next_code
 from app.services.pdf import logo_data_uri, render_pdf
 
 router = APIRouter(prefix="/purchasing", tags=["purchasing"])
@@ -271,13 +273,6 @@ async def po_pdf(
     )
 
 
-async def _next_code(db: AsyncSession, model, prefix: str, start: int) -> str:
-    result = await db.execute(select(model.code).order_by(model.code.desc()).limit(1))
-    last = result.scalar_one_or_none()
-    n = int(last.split("-")[1]) + 1 if last else start
-    return f"{prefix}-{n}"
-
-
 # --------------------------------------------------------- item master --
 class ItemMasterIn(BaseModel):
     name: str
@@ -306,10 +301,10 @@ class ItemMasterOut(ItemMasterIn):
 
 async def _stock_lookup(db: AsyncSession, stock_type: str, stock_id: uuid.UUID) -> tuple[str, float]:
     if stock_type == "food":
-        stock = await db.get(FoodInventory, stock_id)
-        return (stock.category, float(stock.cost)) if stock else ("—", 0.0)
-    stock = await db.get(Inventory, stock_id)
-    return (stock.category, float(stock.avg_price)) if stock else ("—", 0.0)
+        row = await db.get(FoodInventory, stock_id)
+        return (row.category, float(row.cost)) if row else ("—", 0.0)
+    row = await db.get(Inventory, stock_id)
+    return (row.category, float(row.avg_price)) if row else ("—", 0.0)
 
 
 def _item_master_out(item: ItemMaster, category: str, avg_price: float, created_by_name: str | None = None) -> ItemMasterOut:
@@ -365,13 +360,13 @@ async def list_item_master(db: AsyncSession = Depends(get_db), _user: User = Dep
 
     out = []
     for item in items:
-        stock = (food_rows if item.stock_type == "food" else general_rows).get(item.stock_id)
+        row = (food_rows if item.stock_type == "food" else general_rows).get(item.stock_id)
         creator_name = creator_names.get(item.created_by)
-        if stock is None:
+        if row is None:
             out.append(_item_master_out(item, "—", 0.0, creator_name))
         else:
-            avg_price = float(stock.cost if item.stock_type == "food" else stock.avg_price)
-            out.append(_item_master_out(item, stock.category, avg_price, creator_name))
+            avg_price = float(row.cost if item.stock_type == "food" else row.avg_price)
+            out.append(_item_master_out(item, row.category, avg_price, creator_name))
     return out
 
 
@@ -657,160 +652,304 @@ class GrnLineIn(BaseModel):
 
 class GrnIn(BaseModel):
     po_id: uuid.UUID
+    receiving_cost_center_id: uuid.UUID
+    date: DateType | None = None
+    notes: str | None = None
     lines: list[GrnLineIn]
+    # True = create and submit in one step (stock is posted immediately);
+    # False = save as a Draft with no stock effect.
+    submit: bool = False
 
 
 class GrnLineOut(BaseModel):
     id: uuid.UUID
+    po_line_id: uuid.UUID | None
     name: str
     ordered_qty: float
     received_qty: float
     unit: str
     ordered_price: float
     price: float
-
-    class Config:
-        from_attributes = True
+    line_total: float
+    expiry: date | None
+    batch_label: str | None
 
 
 class GrnOut(BaseModel):
     id: uuid.UUID
     code: str
+    status: str
     po_id: uuid.UUID
+    po_code: str | None
     supplier_id: uuid.UUID
+    supplier_name: str | None
     date: date
+    receiving_cost_center_id: uuid.UUID
+    receiving_cost_center: str
+    notes: str | None
+    total: float
     received_by_name: str | None = None
+    submitted_by_name: str | None = None
+    submitted_at: datetime | None = None
+    approved_by_name: str | None = None
+    approved_at: datetime | None = None
+    closed_by_name: str | None = None
+    closed_at: datetime | None = None
     lines: list[GrnLineOut]
 
-    class Config:
-        from_attributes = True
+
+# A PO can be received against while it is open: freshly ordered, or already
+# partly received. (Phase B renames these to the standard workflow words.)
+PO_RECEIVABLE = ("Ordered", "Partially Received")
+EPS = 0.0005
 
 
-async def _grn_out(db: AsyncSession, grn: Grn) -> GrnOut:
-    lines_result = await db.execute(select(GrnLine).where(GrnLine.grn_id == grn.id))
-    receiver = await db.get(User, grn.received_by) if grn.received_by else None
-    return GrnOut(
-        id=grn.id,
-        code=grn.code,
-        po_id=grn.po_id,
-        supplier_id=grn.supplier_id,
-        date=grn.date,
-        received_by_name=receiver.name if receiver else None,
-        lines=lines_result.scalars().all(),
-    )
+async def _grn_outs(db: AsyncSession, grns: list[Grn]) -> list[GrnOut]:
+    if not grns:
+        return []
+    labels = {cc.id: cc.label for cc in (await db.execute(select(CostCenter))).scalars().all()}
+    po_codes = {
+        po_id: code
+        for po_id, code in (
+            await db.execute(select(PurchaseOrder.id, PurchaseOrder.code).where(PurchaseOrder.id.in_({g.po_id for g in grns})))
+        ).all()
+    }
+    suppliers = {s.id: s.name for s in (await db.execute(select(Supplier))).scalars().all()}
+    user_ids = set()
+    for g in grns:
+        user_ids.update({g.received_by, g.submitted_by, g.approved_by, g.closed_by})
+    user_ids.discard(None)
+    names = dict((await db.execute(select(User.id, User.name).where(User.id.in_(user_ids)))).all()) if user_ids else {}
+    lines = (await db.execute(select(GrnLine).where(GrnLine.grn_id.in_([g.id for g in grns])))).scalars().all()
+    by_grn: dict[uuid.UUID, list[GrnLine]] = {}
+    for line in lines:
+        by_grn.setdefault(line.grn_id, []).append(line)
+    out = []
+    for g in grns:
+        gl = [
+            GrnLineOut(
+                id=l.id, po_line_id=l.po_line_id, name=l.name, ordered_qty=float(l.ordered_qty),
+                received_qty=float(l.received_qty), unit=l.unit, ordered_price=float(l.ordered_price),
+                price=float(l.price), line_total=round(float(l.received_qty) * float(l.price), 3),
+                expiry=l.expiry, batch_label=l.batch_label,
+            )
+            for l in by_grn.get(g.id, [])
+        ]
+        out.append(
+            GrnOut(
+                id=g.id, code=g.code, status=g.status, po_id=g.po_id, po_code=po_codes.get(g.po_id),
+                supplier_id=g.supplier_id, supplier_name=suppliers.get(g.supplier_id), date=g.date,
+                receiving_cost_center_id=g.receiving_cost_center_id,
+                receiving_cost_center=labels.get(g.receiving_cost_center_id, "-"), notes=g.notes,
+                total=round(sum(l.line_total for l in gl), 2), received_by_name=names.get(g.received_by),
+                submitted_by_name=names.get(g.submitted_by), submitted_at=g.submitted_at,
+                approved_by_name=names.get(g.approved_by), approved_at=g.approved_at,
+                closed_by_name=names.get(g.closed_by), closed_at=g.closed_at, lines=gl,
+            )
+        )
+    return out
+
+
+async def _validate_grn(db: AsyncSession, payload: GrnIn) -> tuple[PurchaseOrder, list[tuple[PoLine, GrnLineIn]]]:
+    po = await db.get(PurchaseOrder, payload.po_id)
+    if not po:
+        raise HTTPException(404, "Purchase order not found")
+    if po.status not in PO_RECEIVABLE:
+        raise HTTPException(400, f"This purchase order is {po.status} and cannot receive goods")
+    if not await db.get(CostCenter, payload.receiving_cost_center_id):
+        raise HTTPException(400, "Select a receiving cost center")
+    if not payload.lines:
+        raise HTTPException(400, "Enter a received quantity for at least one item")
+    resolved = []
+    for line_in in payload.lines:
+        po_line = await db.get(PoLine, line_in.po_line_id)
+        if not po_line or po_line.po_id != po.id:
+            raise HTTPException(400, f"PO line {line_in.po_line_id} does not belong to this PO")
+        if line_in.received_qty <= 0:
+            raise HTTPException(400, "Received quantity must be greater than zero")
+        remaining = float(po_line.qty) - float(po_line.received_qty)
+        if line_in.received_qty > remaining + EPS:
+            raise HTTPException(
+                400, f"{po_line.name}: receiving {line_in.received_qty:g} exceeds the {remaining:g} still pending"
+            )
+        resolved.append((po_line, line_in))
+    return po, resolved
+
+
+async def _write_grn_lines(db: AsyncSession, grn: Grn, resolved) -> None:
+    for po_line, line_in in resolved:
+        ordered_price = float(po_line.price)
+        db.add(
+            GrnLine(
+                grn_id=grn.id, po_line_id=po_line.id, name=po_line.name, ordered_qty=po_line.qty,
+                received_qty=line_in.received_qty, unit=po_line.unit, ordered_price=ordered_price,
+                price=line_in.actual_price if line_in.actual_price is not None else ordered_price,
+                expiry=line_in.expiry, batch_label=line_in.batch_label,
+            )
+        )
+
+
+async def _grn_snapshot(db: AsyncSession, grn: Grn) -> dict:
+    cc = await db.get(CostCenter, grn.receiving_cost_center_id)
+    lines = (await db.execute(select(GrnLine).where(GrnLine.grn_id == grn.id))).scalars().all()
+    return {
+        "date": grn.date.isoformat(), "cost_center": cc.label if cc else None, "notes": grn.notes,
+        "lines": [{"item": l.name, "qty": float(l.received_qty), "price": float(l.price)} for l in lines],
+    }
+
+
+async def _refresh_po_status(db: AsyncSession, po: PurchaseOrder) -> None:
+    lines = (await db.execute(select(PoLine).where(PoLine.po_id == po.id))).scalars().all()
+    if all(float(l.received_qty) >= float(l.qty) - EPS for l in lines):
+        po.status = "Goods Received"
+    elif any(float(l.received_qty) > EPS for l in lines):
+        po.status = "Partially Received"
+    else:
+        po.status = "Ordered"
 
 
 @router.get("/grns", response_model=list[GrnOut])
 async def list_grns(db: AsyncSession = Depends(get_db), _user: User = Depends(purchasing_access)):
-    result = await db.execute(select(Grn).order_by(Grn.date.desc()))
-    return [await _grn_out(db, grn) for grn in result.scalars().all()]
+    result = await db.execute(select(Grn).order_by(Grn.date.desc(), Grn.code.desc()))
+    return await _grn_outs(db, list(result.scalars().all()))
+
+
+@router.get("/grns/{grn_id}", response_model=GrnOut)
+async def get_grn(grn_id: uuid.UUID, db: AsyncSession = Depends(get_db), _user: User = Depends(purchasing_access)):
+    grn = await db.get(Grn, grn_id)
+    if not grn:
+        raise HTTPException(404, "GRN not found")
+    return (await _grn_outs(db, [grn]))[0]
 
 
 @router.post("/grns", response_model=GrnOut, status_code=201)
 async def receive_goods(
     payload: GrnIn, db: AsyncSession = Depends(get_db), user: User = Depends(purchasing_access)
 ):
-    """Receiving a GRN updates stock and the PO's received quantities in one
-    transaction — the highest-risk interlock in the app (build plan §07,
-    phase 2 'done' criteria: 'receiving a GRN updates stock')."""
-    po = await db.get(PurchaseOrder, payload.po_id)
-    if not po:
-        raise HTTPException(404, "Purchase order not found")
-
+    """Creates a GRN against a PO. With submit=true it is posted at once:
+    stock is registered at the receiving cost center and the PO's received
+    quantities move - the interlock that keeps purchasing and stock in step."""
+    po, resolved = await _validate_grn(db, payload)
     grn = Grn(
-        code=await _next_code(db, Grn, "GRN", 2001),
-        po_id=po.id,
-        supplier_id=po.supplier_id,
-        date=date.today(),
-        received_by=user.id,
+        code=await _next_code(db, Grn, "GRN", 2001), po_id=po.id, supplier_id=po.supplier_id,
+        date=payload.date or date.today(), receiving_cost_center_id=payload.receiving_cost_center_id,
+        notes=payload.notes, received_by=user.id,
     )
     db.add(grn)
     await db.flush()
+    await _write_grn_lines(db, grn, resolved)
+    await audit.record(db, user, "grn", grn.id, grn.code, "create", to_status=workflow.DRAFT)
+    await log_activity(db, user, "Created GRN", f"{grn.code} - {po.code}")
+    if payload.submit:
+        await db.flush()
+        await workflow.apply_action(db, workflow.get_doctype("grn"), grn, "submit", user)
+    await db.commit()
+    return (await _grn_outs(db, [grn]))[0]
 
+
+@router.put("/grns/{grn_id}", response_model=GrnOut)
+async def update_grn(
+    grn_id: uuid.UUID, payload: GrnIn, db: AsyncSession = Depends(get_db), user: User = Depends(purchasing_access)
+):
+    grn = await db.get(Grn, grn_id)
+    if not grn:
+        raise HTTPException(404, "GRN not found")
+    workflow.ensure_editable(grn, user)
+    if payload.po_id != grn.po_id:
+        raise HTTPException(400, "A GRN cannot be moved to a different purchase order")
+    _, resolved = await _validate_grn(db, payload)
+    before = await _grn_snapshot(db, grn)
+    grn.date, grn.receiving_cost_center_id, grn.notes = (
+        payload.date or grn.date, payload.receiving_cost_center_id, payload.notes,
+    )
+    await db.execute(delete(GrnLine).where(GrnLine.grn_id == grn.id))
+    await _write_grn_lines(db, grn, resolved)
+    await db.flush()
+    await audit.record(db, user, "grn", grn.id, grn.code, "edit",
+                       changes={"before": before, "after": await _grn_snapshot(db, grn)})
+    await db.commit()
+    return (await _grn_outs(db, [grn]))[0]
+
+
+@router.delete("/grns/{grn_id}", status_code=204)
+async def delete_grn(grn_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(purchasing_access)):
+    grn = await db.get(Grn, grn_id)
+    if not grn:
+        raise HTTPException(404, "GRN not found")
+    workflow.ensure_editable(grn, user)
+    await audit.record(db, user, "grn", grn.id, grn.code, "delete", from_status=grn.status)
+    await db.delete(grn)
+    await db.commit()
+
+
+async def _post_grn(db: AsyncSession, grn: Grn, user: User) -> None:
+    po = await db.get(PurchaseOrder, grn.po_id)
+    if not po or po.status not in PO_RECEIVABLE:
+        raise HTTPException(400, f"Purchase order is {po.status if po else 'missing'} and cannot receive goods")
+    lines = (await db.execute(select(GrnLine).where(GrnLine.grn_id == grn.id))).scalars().all()
+    if not lines:
+        raise HTTPException(400, "Enter a received quantity for at least one item before submitting")
     receipt_total = 0.0
-    for line_in in payload.lines:
-        po_line = await db.get(PoLine, line_in.po_line_id)
-        if not po_line or po_line.po_id != po.id:
-            raise HTTPException(400, f"PO line {line_in.po_line_id} does not belong to this PO")
-
-        ordered_price = float(po_line.price)
-        actual_price = line_in.actual_price if line_in.actual_price is not None else ordered_price
-        receipt_total += actual_price * line_in.received_qty
-
-        db.add(
-            GrnLine(
-                grn_id=grn.id,
-                po_line_id=po_line.id,
-                name=po_line.name,
-                ordered_qty=po_line.qty,
-                received_qty=line_in.received_qty,
-                unit=po_line.unit,
-                ordered_price=ordered_price,
-                price=actual_price,
+    for line in lines:
+        po_line = await db.get(PoLine, line.po_line_id) if line.po_line_id else None
+        if not po_line:
+            raise HTTPException(400, f"{line.name}: the purchase order line no longer exists")
+        remaining = float(po_line.qty) - float(po_line.received_qty)
+        if float(line.received_qty) > remaining + EPS:
+            raise HTTPException(
+                400, f"{line.name}: receiving {float(line.received_qty):g} exceeds the {remaining:g} still pending"
             )
+        po_line.received_qty = float(po_line.received_qty) + float(line.received_qty)
+        receipt_total += float(line.price) * float(line.received_qty)
+
+        item = await db.get(ItemMaster, po_line.item_master_id) if po_line.item_master_id else None
+        if not item:
+            continue
+        # The catalog's "last price" reflects what was actually paid.
+        item.last_price = float(line.price)
+        if item.stock_type == "general":
+            inv = await db.get(Inventory, item.stock_id)
+            if inv:
+                old_value = float(inv.stock) * float(inv.avg_price)
+                new_qty = float(inv.stock) + float(line.received_qty)
+                inv.avg_price = (old_value + float(line.received_qty) * float(line.price)) / new_qty if new_qty > 0 else line.price
+                inv.last_price = float(line.price)
+        await stock.post_in(
+            db, stock_type=item.stock_type, stock_id=item.stock_id, cc_id=grn.receiving_cost_center_id,
+            qty=float(line.received_qty), unit_cost=float(line.price), txn_type="GRN", txn_id=grn.id,
+            txn_code=grn.code, user=user, batch_label=line.batch_label, expiry=line.expiry, received_date=grn.date,
         )
-        po_line.received_qty = float(po_line.received_qty) + line_in.received_qty
 
-        if po_line.item_master_id:
-            item = await db.get(ItemMaster, po_line.item_master_id)
-            if item:
-                # The catalog's "last price" reflects what was actually
-                # paid, not what was originally ordered.
-                item.last_price = actual_price
-                if item.stock_type == "food":
-                    stock = await db.get(FoodInventory, item.stock_id)
-                    if stock:
-                        # Each receipt is its own batch lot (own cost,
-                        # own expiry) rather than blended into one figure —
-                        # lets consumption draw FEFO instead of averaging
-                        # away which stock is actually closest to expiry.
-                        db.add(
-                            FoodInventoryBatch(
-                                food_inventory_id=stock.id,
-                                batch_label=line_in.batch_label,
-                                qty=line_in.received_qty,
-                                expiry=line_in.expiry,
-                                cost=actual_price,
-                                received_date=date.today(),
-                            )
-                        )
-                        await db.flush()
-                        await _recompute_food_rollup(db, stock.id)
-                else:
-                    stock = await db.get(Inventory, item.stock_id)
-                    if stock:
-                        old_value = float(stock.stock) * float(stock.avg_price)
-                        new_value = line_in.received_qty * actual_price
-                        new_qty = float(stock.stock) + line_in.received_qty
-                        stock.avg_price = (old_value + new_value) / new_qty if new_qty > 0 else actual_price
-                        stock.last_price = actual_price
-                        stock.stock = new_qty
+    await db.flush()
+    await _refresh_po_status(db, po)
 
-    result = await db.execute(select(PoLine).where(PoLine.po_id == po.id))
-    all_lines = result.scalars().all()
-    fully_received = all(float(l.received_qty) >= float(l.qty) for l in all_lines)
-    po.status = "Goods Received" if fully_received else "Partially Received"
-
-    # Auto-log the actual receiving cost as an Expense so Dashboard/Reports
-    # spend figures reflect real purchasing activity — Purchasing and
-    # Expenses used to be two disconnected islands (a GRN created no
-    # financial record anywhere). Manual Expense entry stays available
-    # separately for non-stock costs (utilities, salaries, cash buys).
+    # The actual receiving cost is auto-logged as an Expense so Dashboard and
+    # Reports spend reflect real purchasing activity.
     supplier = await db.get(Supplier, po.supplier_id)
     db.add(
         Expense(
-            category="Residence Purchases",
-            amount=round(receipt_total, 2),
-            date=date.today(),
-            supplier=supplier.name if supplier else None,
-            method="Bank Transfer",
-            notes=f"Auto-logged from {grn.code} — {po.code}",
-            created_by=user.id,
+            category="Residence Purchases", amount=round(receipt_total, 2), date=grn.date,
+            supplier=supplier.name if supplier else None, method="Bank Transfer",
+            notes=f"Auto-logged from {grn.code} — {po.code}", created_by=user.id,
         )
     )
 
-    await log_activity(db, user, "Received goods", f"{grn.code} — {po.code}")
-    await db.commit()
-    await db.refresh(grn)
 
-    return await _grn_out(db, grn)
+async def _unpost_grn(db: AsyncSession, grn: Grn, user: User) -> None:
+    """Stock is already reversed by the workflow; this undoes the PO's
+    received quantities and the auto-logged expense."""
+    po = await db.get(PurchaseOrder, grn.po_id)
+    lines = (await db.execute(select(GrnLine).where(GrnLine.grn_id == grn.id))).scalars().all()
+    for line in lines:
+        po_line = await db.get(PoLine, line.po_line_id) if line.po_line_id else None
+        if po_line:
+            po_line.received_qty = max(0.0, float(po_line.received_qty) - float(line.received_qty))
+    if po:
+        await db.flush()
+        await _refresh_po_status(db, po)
+    await db.execute(delete(Expense).where(Expense.notes.like(f"Auto-logged from {grn.code} %")))
+
+
+workflow.register(
+    workflow.DocType("grn", "GRN", Grn, "purchasing", _post_grn, _unpost_grn, creator_attr="received_by")
+)

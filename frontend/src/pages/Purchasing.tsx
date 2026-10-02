@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useCreate, useList, useUpdate } from "../api/hooks";
 import { Icon } from "../components/icons";
+import { HistoryPanel, StatusBadge, WorkflowBar, errorText } from "../components/Workflow";
 import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { fmtDate, todayIso } from "../lib/date";
-import type { CostCenter, CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, StaffMember, Supplier, UnitOfMeasureEntry } from "../types";
+import type { CostCenter, CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, StaffMember, Supplier, TxnStatus, UnitOfMeasureEntry } from "../types";
 
-interface GrnLine { id: string; name: string; ordered_qty: number; received_qty: number; unit: string; ordered_price: number; price: number }
-interface Grn { id: string; code: string; po_id: string; supplier_id: string; date: string; received_by_name: string | null; lines: GrnLine[] }
+interface GrnLine { id: string; name: string; ordered_qty: number; received_qty: number; unit: string; ordered_price: number; price: number; line_total: number; expiry: string | null; batch_label: string | null }
+interface Grn {
+  id: string; code: string; status: TxnStatus; po_id: string; po_code: string | null; supplier_id: string; supplier_name: string | null
+  date: string; receiving_cost_center_id: string; receiving_cost_center: string; notes: string | null; total: number
+  received_by_name: string | null; lines: GrnLine[]
+}
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -23,7 +28,9 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 const TABS = ["Purchase Requests", "Purchase Orders", "Goods Received", "Shopping Basket", "Suppliers", "Credit Notes"] as const;
 
 export function Purchasing() {
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Purchase Requests");
+  const [params, setParams] = useSearchParams();
+  const tab = TABS.find((t) => t === params.get("tab")) ?? "Purchase Requests";
+  const setTab = (t: (typeof TABS)[number]) => setParams({ tab: t }, { replace: true });
   const { data: requests } = useList<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
   const { data: orders } = useList<PurchaseOrder>("purchase-orders", "/purchasing/purchase-orders");
   const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
@@ -604,6 +611,11 @@ export function ReceiveGoodsPage() {
   // one stock figure; optional, left blank means "no batch tracking for this receipt".
   const [expiries, setExpiries] = useState<Record<string, string>>({});
   const [batchLabels, setBatchLabels] = useState<Record<string, string>>({});
+  // Stock is registered at the receiving cost center — mandatory, no default.
+  const { data: costCenters } = useList<CostCenter>("cost-centers", "/kitchen/cost-centers");
+  const [costCenterId, setCostCenterId] = useState("");
+  const [date, setDate] = useState(todayIso());
+  const [notes, setNotes] = useState("");
 
   useEffect(() => {
     if (!po || Object.keys(qtys).length > 0) return;
@@ -617,9 +629,13 @@ export function ReceiveGoodsPage() {
   }
 
   const receive = useMutation({
-    mutationFn: async () =>
+    mutationFn: async (submit: boolean) =>
       api.post("/purchasing/grns", {
         po_id: poId,
+        receiving_cost_center_id: costCenterId,
+        date,
+        notes: notes || null,
+        submit,
         lines: pending
           .filter((l) => (qtys[l.id] ?? 0) > 0)
           .map((l) => ({
@@ -636,7 +652,9 @@ export function ReceiveGoodsPage() {
       qc.invalidateQueries({ queryKey: ["inventory"] });
       qc.invalidateQueries({ queryKey: ["food-inventory"] });
       qc.invalidateQueries({ queryKey: ["expenses"] });
-      navigate("/purchasing");
+      qc.invalidateQueries({ queryKey: ["stock-balances"] });
+      qc.invalidateQueries({ queryKey: ["stock-movements"] });
+      navigate("/purchasing?tab=Goods%20Received");
     },
   });
 
@@ -654,6 +672,28 @@ export function ReceiveGoodsPage() {
             Enter the quantity actually received for each line — partial receipts are supported. Adjust the price
             only if the actual invoice differs from what was ordered.
           </span>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 font-medium">
+            Receiving cost center *
+            <select
+              required value={costCenterId} onChange={(e) => setCostCenterId(e.target.value)}
+              className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
+            >
+              <option value="">Select where stock is received…</option>
+              {costCenters?.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 font-medium">
+            Receipt date
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+              className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }} />
+          </label>
+          <label className="flex min-w-[200px] flex-1 flex-col gap-1 font-medium">
+            Notes
+            <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional"
+              className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }} />
+          </label>
         </div>
         <Table>
           <thead><tr><Th>Item</Th><Th>Ordered</Th><Th>Already received</Th><Th>Pending</Th><Th>Receiving now</Th><Th>Actual price</Th><Th>Expiry</Th><Th>Batch</Th></tr></thead>
@@ -716,9 +756,15 @@ export function ReceiveGoodsPage() {
             })}
           </tbody>
         </Table>
-        <Button onClick={() => receive.mutate()} disabled={receive.isPending}>
-          {receive.isPending ? "Posting..." : "Post Goods Receipt"}
-        </Button>
+        {receive.isError && <p style={{ color: "var(--status-critical)" }}>{errorText(receive.error)}</p>}
+        <div className="flex gap-2">
+          <Button onClick={() => receive.mutate(true)} disabled={receive.isPending || !costCenterId}>
+            {receive.isPending ? "Posting..." : "Receive & Submit"}
+          </Button>
+          <Button variant="secondary" onClick={() => receive.mutate(false)} disabled={receive.isPending || !costCenterId}>
+            Save draft
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -728,7 +774,9 @@ function GoodsReceivedTab() {
   const { data: grns, isLoading } = useList<Grn>("grns", "/purchasing/grns");
   const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
   const { data: orders } = useList<PurchaseOrder>("purchase-orders", "/purchasing/purchase-orders");
-  const [detail, setDetail] = useState<Grn | null>(null);
+  // Keep only the id so the open detail follows the refetched GRN (status changes).
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const detail = grns?.find((g) => g.id === detailId) ?? null;
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [supplierFilter, setSupplierFilter] = useState("");
@@ -755,37 +803,41 @@ function GoodsReceivedTab() {
 
       {!filtered || filtered.length === 0 ? <EmptyState label="No goods received match these filters." /> : (
       <Table>
-        <thead><tr><Th>GRN</Th><Th>PO</Th><Th>Supplier</Th><Th>Date</Th><Th>Received by</Th><Th>Lines</Th><Th>Value</Th></tr></thead>
+        <thead><tr><Th>GRN</Th><Th>Date</Th><Th>PO</Th><Th>Supplier</Th><Th>Cost center</Th><Th>Lines</Th><Th>Value</Th><Th>Status</Th></tr></thead>
         <tbody>
-          {filtered.map((g) => {
-            const value = g.lines.reduce((s, l) => s + l.received_qty * l.price, 0);
-            return (
-              <tr key={g.id} className="cursor-pointer" onClick={() => setDetail(g)}>
-                <Td className="font-medium">{g.code}</Td>
-                <Td>{poCode(g.po_id)}</Td>
-                <Td>{supplierName(g.supplier_id)}</Td>
-                <Td>{fmtDate(g.date)}</Td>
-                <Td>{g.received_by_name ?? "—"}</Td>
-                <Td>{g.lines.length}</Td>
-                <Td>KWD {value.toFixed(2)}</Td>
-              </tr>
-            );
-          })}
+          {filtered.map((g) => (
+            <tr key={g.id} className="cursor-pointer" onClick={() => setDetailId(g.id)}>
+              <Td className="font-medium">{g.code}</Td>
+              <Td>{fmtDate(g.date)}</Td>
+              <Td>{g.po_code ?? poCode(g.po_id)}</Td>
+              <Td>{supplierName(g.supplier_id)}</Td>
+              <Td>{g.receiving_cost_center}</Td>
+              <Td>{g.lines.length}</Td>
+              <Td>KWD {g.total.toFixed(2)}</Td>
+              <Td><StatusBadge status={g.status} /></Td>
+            </tr>
+          ))}
         </tbody>
       </Table>
       )}
 
       {detail && (
-        <Modal title={detail.code} onClose={() => setDetail(null)}>
+        <Modal title={detail.code} onClose={() => setDetailId(null)}>
           <div className="flex flex-col gap-3 text-[13px]">
+            <div className="flex items-center justify-between gap-2">
+              <StatusBadge status={detail.status} />
+              <WorkflowBar entityType="grn" id={detail.id} status={detail.status} queryKeys={["grns", "purchase-orders"]} />
+            </div>
             <div className="grid grid-cols-2 gap-2">
-              <InfoRow label="Purchase order" value={poCode(detail.po_id)} />
+              <InfoRow label="Purchase order" value={detail.po_code ?? poCode(detail.po_id)} />
               <InfoRow label="Supplier" value={supplierName(detail.supplier_id)} />
+              <InfoRow label="Receiving cost center" value={detail.receiving_cost_center} />
               <InfoRow label="Date" value={fmtDate(detail.date)} />
               <InfoRow label="Received by" value={detail.received_by_name ?? "—"} />
+              <InfoRow label="Total" value={`KWD ${detail.total.toFixed(3)}`} />
             </div>
             <Table>
-              <thead><tr><Th>Item</Th><Th>Ordered</Th><Th>Received</Th><Th>Price</Th><Th>Line value</Th></tr></thead>
+              <thead><tr><Th>Item</Th><Th>Ordered</Th><Th>Received</Th><Th>Price</Th><Th>Line value</Th><Th>Batch</Th><Th>Expiry</Th></tr></thead>
               <tbody>
                 {detail.lines.map((l) => (
                   <tr key={l.id}>
@@ -800,11 +852,17 @@ function GoodsReceivedTab() {
                         </span>
                       )}
                     </Td>
-                    <Td>KWD {(l.received_qty * l.price).toFixed(3)}</Td>
+                    <Td>KWD {l.line_total.toFixed(3)}</Td>
+                    <Td>{l.batch_label ?? "—"}</Td>
+                    <Td>{l.expiry ? fmtDate(l.expiry) : "—"}</Td>
                   </tr>
                 ))}
               </tbody>
             </Table>
+            <div>
+              <div className="mb-1 text-[12px] font-semibold uppercase" style={{ color: "var(--ink-500)" }}>History</div>
+              <HistoryPanel entityType="grn" id={detail.id} />
+            </div>
           </div>
         </Modal>
       )}

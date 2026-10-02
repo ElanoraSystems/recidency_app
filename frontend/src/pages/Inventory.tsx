@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useCreate, useList, useUpdate } from "../api/hooks";
+import { BalancesTab, LocationBreakdown, MovementsTab } from "../components/StockLedger";
 import { Badge, Button, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th } from "../components/ui";
 import { fmtDate } from "../lib/date";
-import type { FoodInventoryItem, InventoryItem, ItemMasterEntry, ItemMasterTransaction, PurchaseRequest, StockCountDetail, StockCountSummary, Supplier, UnitOfMeasureEntry } from "../types";
+import type { CostCenter, FoodInventoryItem, InventoryItem, ItemMasterEntry, ItemMasterTransaction, PurchaseRequest, StockCountDetail, StockCountSummary, Supplier, UnitOfMeasureEntry } from "../types";
 
 // Unified view over general (Inventory) and food (FoodInventory) stock rows
 // for the Stock tab — the two tables have different shapes (stock/qty,
@@ -43,7 +44,7 @@ function toStockRows(stock?: InventoryItem[], foodInventory?: FoodInventoryItem[
   return [...general, ...food];
 }
 
-const TABS = ["Stock", "Item Master", "Stock Count"] as const;
+const TABS = ["Stock", "Balances", "Movements", "Item Master", "Stock Count"] as const;
 const CATEGORIES = [
   "Food", "Dairy", "Meat", "Seafood", "Vegetables", "Frozen", "Bakery", "Dry Goods",
   "Beverages", "Cleaning Chemicals", "Toiletries", "Linen", "Kitchenware",
@@ -52,7 +53,9 @@ const CATEGORIES = [
 ];
 
 export function InventoryPage() {
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Stock");
+  const [params, setParams] = useSearchParams();
+  const tab = TABS.find((t) => t === params.get("tab")) ?? "Stock";
+  const setTab = (t: (typeof TABS)[number]) => setParams({ tab: t }, { replace: true });
   const [modal, setModal] = useState(false);
   const { data: stock } = useList<InventoryItem>("inventory", "/inventory");
   const { data: foodInventory } = useList<FoodInventoryItem>("food-inventory", "/kitchen/food-inventory");
@@ -81,7 +84,7 @@ export function InventoryPage() {
       />
 
       <div className="mb-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
-        {tab === "Stock" ? (
+        {tab === "Stock" || tab === "Balances" || tab === "Movements" ? (
           <>
             <StatTile label="Total Items" icon="inventory" value={(stock?.length ?? 0) + (foodInventory?.length ?? 0)} />
             <StatTile label="Below Minimum" icon="alertTriangle" value={lowCount} progressColor="var(--status-critical)" />
@@ -121,6 +124,10 @@ export function InventoryPage() {
 
       {tab === "Stock" ? (
         <StockTab stock={stock} foodInventory={foodInventory} />
+      ) : tab === "Balances" ? (
+        <BalancesTab />
+      ) : tab === "Movements" ? (
+        <MovementsTab />
       ) : tab === "Item Master" ? (
         <ItemMasterTab items={itemMaster} stock={stock} foodInventory={foodInventory} />
       ) : (
@@ -200,6 +207,7 @@ function StockDetailModal({ item, onClose }: { item: StockRow; onClose: () => vo
           <ProfileBlock title="Pricing" rows={pricingRows} />
           <ProfileBlock title="Other" rows={[["Expiry", item.expiry ?? "N/A"]]} />
         </div>
+        <LocationBreakdown stockId={item.id} />
         {low && (
           <Button onClick={onCreatePR} disabled={createPR.isPending}>
             {createPR.isPending ? "Creating..." : "Create Purchase Request"}
@@ -514,8 +522,12 @@ function StockCountTab() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { data, isLoading } = useList<StockCountSummary>("stock-counts", "/stock-counts");
+  const { data: costCenters } = useList<CostCenter>("cost-centers", "/kitchen/cost-centers");
+  const [costCenterId, setCostCenterId] = useState("");
+  const mainStoreId = costCenters?.find((c) => c.label === "Main Store")?.id ?? "";
   const create = useMutation({
-    mutationFn: async () => (await api.post("/stock-counts", {})).data as StockCountDetail,
+    mutationFn: async () =>
+      (await api.post("/stock-counts", { cost_center_id: costCenterId || mainStoreId || null })).data as StockCountDetail,
     onSuccess: (count) => {
       qc.invalidateQueries({ queryKey: ["stock-counts"] });
       navigate(`/inventory/counts/${count.id}`);
@@ -531,19 +543,28 @@ function StockCountTab() {
           A physical count reconciles book stock against what's actually on the shelf — submitting posts the
           variance onto real stock.
         </p>
-        <Button onClick={() => create.mutate()} disabled={create.isPending}>
-          {create.isPending ? "Starting..." : "+ New Count"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <select
+            value={costCenterId || mainStoreId} onChange={(e) => setCostCenterId(e.target.value)}
+            className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
+          >
+            {costCenters?.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+          <Button onClick={() => create.mutate()} disabled={create.isPending}>
+            {create.isPending ? "Starting..." : "+ New Count"}
+          </Button>
+        </div>
       </div>
       {!data || data.length === 0 ? (
         <EmptyState label="No stock counts yet." />
       ) : (
         <Table>
-          <thead><tr><Th>Date</Th><Th>Status</Th><Th>Items</Th><Th>Variance Value</Th><Th>{" "}</Th></tr></thead>
+          <thead><tr><Th>Date</Th><Th>Cost center</Th><Th>Status</Th><Th>Items</Th><Th>Variance Value</Th><Th>{" "}</Th></tr></thead>
           <tbody>
             {data.map((c) => (
               <tr key={c.id} className="cursor-pointer" onClick={() => navigate(`/inventory/counts/${c.id}`)}>
                 <Td>{c.date}</Td>
+                <Td>{c.cost_center ?? "—"}</Td>
                 <Td><Badge tone={c.status === "Draft" ? "warning" : "good"}>{c.status}</Badge></Td>
                 <Td>{c.item_count}</Td>
                 <Td style={c.variance_value < 0 ? { color: "var(--status-critical)", fontWeight: 600 } : undefined}>
@@ -611,7 +632,7 @@ export function StockCountEntryPage() {
     <div>
       <Link to="/inventory" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Inventory</Link>
       <PageHeader
-        title={`Stock count — ${count.date}`}
+        title={`Stock count — ${count.cost_center ?? "Main Store"} — ${count.date}`}
         subtitle={count.status === "Submitted" ? "Submitted — read only." : "Enter the counted quantity for each item. Leave blank to skip an item."}
       />
       <Table>

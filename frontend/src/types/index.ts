@@ -38,6 +38,67 @@ export interface CostCenter {
   label: string;
 }
 
+export type TxnStatus = "Draft" | "Submitted" | "Approved" | "Closed";
+
+// Who/when for each workflow step; shared by every transaction document.
+export interface TxnStamps {
+  status: TxnStatus;
+  logged_by_name: string | null;
+  submitted_by_name: string | null;
+  submitted_at: string | null;
+  approved_by_name: string | null;
+  approved_at: string | null;
+  closed_by_name: string | null;
+  closed_at: string | null;
+}
+
+export interface AuditEntry {
+  id: string;
+  action: string;
+  from_status: string | null;
+  to_status: string | null;
+  user_name: string | null;
+  reason: string | null;
+  changes: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface StockBalanceItem {
+  stock_type: "food" | "general";
+  stock_id: string;
+  name: string;
+  unit: string;
+  category: string;
+  total_qty: number;
+  total_value: number;
+  by_location: Record<string, number>;
+}
+
+export interface StockBalances {
+  cost_centers: CostCenter[];
+  items: StockBalanceItem[];
+}
+
+export interface StockMovementRow {
+  id: string;
+  created_at: string;
+  txn_type: string;
+  txn_code: string | null;
+  txn_id: string | null;
+  item_name: string;
+  stock_type: string;
+  stock_id: string;
+  unit: string;
+  from_cost_center: string | null;
+  to_cost_center: string | null;
+  qty: number;
+  unit_cost: number;
+  total_value: number;
+  user_name: string | null;
+  status: string;
+  is_reversal: boolean;
+}
+
 export interface WasteLogLine {
   id: string;
   food_inventory_id: string | null;
@@ -49,13 +110,15 @@ export interface WasteLogLine {
   line_cost: number;
 }
 
-export interface WasteLog {
+export interface WasteLog extends TxnStamps {
   id: string;
+  code: string;
   date: string;
+  cost_center_id: string;
+  cost_center: string;
   reason: string;
   notes: string | null;
-  status: string;
-  logged_by_name: string | null;
+  total: number;
   reviewed_by_name: string | null;
   lines: WasteLogLine[];
 }
@@ -180,6 +243,7 @@ export interface FoodInventoryBatchEntry {
   expiry: string | null;
   cost: number;
   received_date: string;
+  cost_center_id: string;
 }
 
 export interface StockCountLineEntry {
@@ -196,6 +260,8 @@ export interface StockCountDetail {
   id: string;
   date: string;
   status: "Draft" | "Submitted";
+  cost_center_id: string | null;
+  cost_center: string | null;
   counted_by: string | null;
   notes: string | null;
   lines: StockCountLineEntry[];
@@ -205,6 +271,7 @@ export interface StockCountSummary {
   id: string;
   date: string;
   status: "Draft" | "Submitted";
+  cost_center: string | null;
   item_count: number;
   variance_value: number;
 }
@@ -215,14 +282,21 @@ export interface StockTransferLine {
   ingredient_name: string;
   qty: number;
   unit: string;
+  unit_cost: number;
+  line_cost: number;
 }
 
-export interface StockTransfer {
+export interface StockTransfer extends TxnStamps {
   id: string;
+  code: string;
   date: string;
+  from_cost_center_id: string;
+  from_cost_center: string;
+  to_cost_center_id: string | null;
+  to_cost_center: string | null;
   reason: string;
   notes: string | null;
-  logged_by_name: string | null;
+  total: number;
   lines: StockTransferLine[];
 }
 
@@ -244,16 +318,26 @@ export interface WeeklyMealPlan {
   entries: WeeklyMealPlanEntry[];
 }
 
-export interface MealLogEntry {
+export interface MealLogLine {
   id: string;
-  date: string;
-  category: string;
-  dish: string;
   recipe_id: string | null;
+  dish: string;
   qty: number;
+  unit: string;
   unit_cost: number;
+  line_cost: number;
+}
+
+export interface MealLogEntry extends TxnStamps {
+  id: string;
+  code: string;
+  date: string;
+  cost_center_id: string;
+  cost_center: string;
+  category: string | null;
   notes: string | null;
-  cost_center: string | null;
+  total: number;
+  lines: MealLogLine[];
 }
 
 export interface Supplier {

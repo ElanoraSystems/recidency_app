@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,19 +14,14 @@ from app.models.kitchen import (
     ConsumptionLog,
     FoodInventory,
     FoodInventoryBatch,
-    MealLog,
     MenuOption,
     ProposedMenu,
     Recipe,
     RecipeIngredient,
-    StockTransfer,
-    StockTransferLine,
-    WasteLog,
-    WasteLogLine,
     WeeklyMealPlan,
     WeeklyMealPlanEntry,
 )
-from app.models.purchasing import ItemMaster, UnitOfMeasure
+from app.models.purchasing import UnitOfMeasure
 from app.models.user import User
 from app.services import units as unit_conv
 from app.services.pdf import logo_data_uri, render_pdf
@@ -149,48 +144,6 @@ async def _resolve_ingredient_stock(
     return {row.id: row for row in rows}
 
 
-async def _recompute_food_rollup(db: AsyncSession, food_inventory_id: uuid.UUID) -> None:
-    """Rewrites FoodInventory.qty/.cost/.expiry/.batch from its live batches
-    so every existing reader keeps working unchanged after a batch change."""
-    stock = await db.get(FoodInventory, food_inventory_id)
-    if not stock:
-        return
-    batches = (
-        await db.execute(
-            select(FoodInventoryBatch).where(
-                FoodInventoryBatch.food_inventory_id == food_inventory_id, FoodInventoryBatch.qty > 0
-            )
-        )
-    ).scalars().all()
-    total_qty = sum(float(b.qty) for b in batches)
-    total_value = sum(float(b.qty) * float(b.cost) for b in batches)
-    stock.qty = total_qty
-    stock.cost = (total_value / total_qty) if total_qty > 0 else 0.0
-    soonest = min((b for b in batches if b.expiry is not None), key=lambda b: b.expiry, default=None)
-    stock.expiry = soonest.expiry if soonest else None
-    stock.batch = soonest.batch_label if soonest else None
-
-
-async def _consume_fefo(db: AsyncSession, food_inventory_id: uuid.UUID, qty: float) -> None:
-    """Deducts qty from food_inventory_id's batches, earliest-expiring first
-    (batches with no expiry last), then refreshes the FoodInventory rollup."""
-    remaining = qty
-    batches = (
-        await db.execute(
-            select(FoodInventoryBatch)
-            .where(FoodInventoryBatch.food_inventory_id == food_inventory_id, FoodInventoryBatch.qty > 0)
-            .order_by(FoodInventoryBatch.expiry.is_(None), FoodInventoryBatch.expiry, FoodInventoryBatch.received_date)
-        )
-    ).scalars().all()
-    for batch in batches:
-        if remaining <= 0:
-            break
-        take = min(float(batch.qty), remaining)
-        batch.qty = float(batch.qty) - take
-        remaining -= take
-    await _recompute_food_rollup(db, food_inventory_id)
-
-
 class FoodInventoryBatchOut(BaseModel):
     id: uuid.UUID
     batch_label: str | None
@@ -198,6 +151,7 @@ class FoodInventoryBatchOut(BaseModel):
     expiry: date | None
     cost: float
     received_date: date
+    cost_center_id: uuid.UUID
 
     class Config:
         from_attributes = True
@@ -572,106 +526,6 @@ async def delete_recipe(
     await db.commit()
 
 
-# --------------------------------------------------------------- meal log --
-class MealLogIn(BaseModel):
-    date: date
-    category: str
-    dish: str
-    recipe_id: uuid.UUID | None = None
-    qty: int
-    notes: str | None = None
-    cost_center: str | None = None
-
-
-class MealLogOut(BaseModel):
-    id: uuid.UUID
-    date: date
-    category: str
-    dish: str
-    recipe_id: uuid.UUID | None
-    qty: int
-    unit_cost: float
-    notes: str | None
-    cost_center: str | None
-
-    class Config:
-        from_attributes = True
-
-
-@router.get("/meal-log", response_model=list[MealLogOut])
-async def list_meal_log(db: AsyncSession = Depends(get_db), _user: User = Depends(kitchen_access)):
-    result = await db.execute(select(MealLog).order_by(MealLog.date.desc()))
-    return result.scalars().all()
-
-
-@router.post("/meal-log", response_model=MealLogOut, status_code=201)
-async def log_meal(
-    payload: MealLogIn, db: AsyncSession = Depends(get_db), user: User = Depends(kitchen_access)
-):
-    """Logging a meal deducts recipe ingredients from food_inventory
-    atomically in the same transaction, so meal log and stock can never
-    drift apart (per the build plan, §03 and §07 phase-2 'done' criteria)."""
-    unit_cost = 0.0
-    recipe: Recipe | None = None
-    recipe_cost = None
-    if payload.recipe_id:
-        recipe = await db.get(Recipe, payload.recipe_id)
-        if not recipe:
-            raise HTTPException(404, "Recipe not found")
-        recipe_cost, _ = await _resolve_recipe(db, recipe)
-        unit_cost = recipe_cost.cost_per_portion
-
-    meal = MealLog(
-        date=payload.date,
-        category=payload.category,
-        dish=payload.dish,
-        recipe_id=payload.recipe_id,
-        qty=payload.qty,
-        unit_cost=unit_cost,
-        logged_by=user.id,
-        notes=payload.notes,
-        cost_center=payload.cost_center,
-    )
-    db.add(meal)
-    await db.flush()
-
-    if recipe and recipe_cost:
-        # Scale = fraction of the recipe's full authored batch (raw_yield_g)
-        # actually served, e.g. 4 portions served out of a batch that yields
-        # 10 => scale 0.4. Recursively expanding at this scale walks through
-        # any sub-recipe ingredients down to real FoodInventory items —
-        # Butler has no separate "prepared batch" stock for a sub-recipe, so
-        # using one deducts its own raw ingredients directly, same as if
-        # they'd been listed on the top-level recipe.
-        scale = payload.qty / (recipe_cost.portions or 1)
-        leaf_consumption = await _expand_consumption(db, recipe, scale)
-        stock_by_id: dict[uuid.UUID, FoodInventory] = {}
-        consumed_by_id: dict[uuid.UUID, float] = {}
-        for stock, qty in leaf_consumption:
-            stock_by_id[stock.id] = stock
-            consumed_by_id[stock.id] = consumed_by_id.get(stock.id, 0.0) + qty
-        for stock_id, consumed_qty in consumed_by_id.items():
-            match = stock_by_id[stock_id]
-            await _consume_fefo(db, stock_id, consumed_qty)
-            db.add(
-                ConsumptionLog(
-                    date=payload.date,
-                    recipe_id=recipe.id,
-                    dish=recipe.name,
-                    meals_served=payload.qty,
-                    ingredient=match.name,
-                    qty_consumed=round(consumed_qty, 3),
-                    unit=match.unit,
-                    matched_stock_id=match.id,
-                    meal_log_id=meal.id,
-                )
-            )
-    await log_activity(db, user, "Logged meal served", f"{payload.dish} — {payload.qty} portions")
-    await db.commit()
-    await db.refresh(meal)
-    return meal
-
-
 @router.get("/consumption-log")
 async def list_consumption_log(
     recipe_id: uuid.UUID | None = None,
@@ -698,213 +552,6 @@ async def list_consumption_log(
     ]
 
 
-# ---------------------------------------------------------- stock transfers --
-class StockTransferLineIn(BaseModel):
-    food_inventory_id: uuid.UUID
-    qty: float
-
-
-class StockTransferIn(BaseModel):
-    date: date
-    reason: str
-    notes: str | None = None
-    lines: list[StockTransferLineIn]
-
-
-class StockTransferLineOut(BaseModel):
-    id: uuid.UUID
-    food_inventory_id: uuid.UUID | None
-    ingredient_name: str
-    qty: float
-    unit: str
-
-    class Config:
-        from_attributes = True
-
-
-class StockTransferOut(BaseModel):
-    id: uuid.UUID
-    date: date
-    reason: str
-    notes: str | None
-    logged_by_name: str | None
-    lines: list[StockTransferLineOut]
-
-
-async def _transfer_out(db: AsyncSession, transfer: StockTransfer) -> StockTransferOut:
-    lines = (
-        await db.execute(select(StockTransferLine).where(StockTransferLine.transfer_id == transfer.id))
-    ).scalars().all()
-    logger = await db.get(User, transfer.logged_by) if transfer.logged_by else None
-    return StockTransferOut(
-        id=transfer.id,
-        date=transfer.date,
-        reason=transfer.reason,
-        notes=transfer.notes,
-        logged_by_name=logger.name if logger else None,
-        lines=[StockTransferLineOut.model_validate(line) for line in lines],
-    )
-
-
-@router.get("/stock-transfers", response_model=list[StockTransferOut])
-async def list_stock_transfers(db: AsyncSession = Depends(get_db), _user: User = Depends(kitchen_access)):
-    result = await db.execute(select(StockTransfer).order_by(StockTransfer.date.desc()))
-    return [await _transfer_out(db, t) for t in result.scalars().all()]
-
-
-@router.post("/stock-transfers", response_model=StockTransferOut, status_code=201)
-async def create_stock_transfer(
-    payload: StockTransferIn, db: AsyncSession = Depends(get_db), user: User = Depends(kitchen_access)
-):
-    """Direct raw-material withdrawal, skipping the recipe step entirely —
-    for when there's no time to build a recipe first. Deducts food_inventory
-    the same way a recipe-based meal log does."""
-    if not payload.lines:
-        raise HTTPException(400, "Add at least one raw material line")
-
-    transfer = StockTransfer(date=payload.date, reason=payload.reason, notes=payload.notes, logged_by=user.id)
-    db.add(transfer)
-    await db.flush()
-
-    for line in payload.lines:
-        if line.qty <= 0:
-            raise HTTPException(400, "Quantity must be greater than zero")
-        item = await db.get(FoodInventory, line.food_inventory_id)
-        if not item:
-            raise HTTPException(404, "One of the selected stock items was not found")
-        await _consume_fefo(db, line.food_inventory_id, line.qty)
-        db.add(
-            StockTransferLine(
-                transfer_id=transfer.id,
-                food_inventory_id=item.id,
-                ingredient_name=item.name,
-                qty=line.qty,
-                unit=item.unit,
-            )
-        )
-
-    await log_activity(db, user, "Logged raw material transfer", f"{payload.reason} — {len(payload.lines)} item(s)")
-    await db.commit()
-    await db.refresh(transfer)
-    return await _transfer_out(db, transfer)
-
-
-# --------------------------------------------------------------- waste log --
-class WasteLogLineIn(BaseModel):
-    food_inventory_id: uuid.UUID
-    qty: float
-
-
-class WasteLogIn(BaseModel):
-    date: date
-    reason: str
-    notes: str | None = None
-    lines: list[WasteLogLineIn]
-
-
-class WasteLogLineOut(BaseModel):
-    id: uuid.UUID
-    food_inventory_id: uuid.UUID | None
-    item_master_id: uuid.UUID | None
-    ingredient_name: str
-    qty: float
-    unit: str
-    unit_cost: float
-    line_cost: float
-
-    class Config:
-        from_attributes = True
-
-
-class WasteLogOut(BaseModel):
-    id: uuid.UUID
-    date: date
-    reason: str
-    notes: str | None
-    status: str
-    logged_by_name: str | None
-    reviewed_by_name: str | None
-    lines: list[WasteLogLineOut]
-
-
-async def _waste_log_out(db: AsyncSession, waste: WasteLog) -> WasteLogOut:
-    lines = (
-        await db.execute(select(WasteLogLine).where(WasteLogLine.waste_log_id == waste.id))
-    ).scalars().all()
-    logger = await db.get(User, waste.logged_by) if waste.logged_by else None
-    reviewer = await db.get(User, waste.reviewed_by) if waste.reviewed_by else None
-    return WasteLogOut(
-        id=waste.id,
-        date=waste.date,
-        reason=waste.reason,
-        notes=waste.notes,
-        status=waste.status,
-        logged_by_name=logger.name if logger else None,
-        reviewed_by_name=reviewer.name if reviewer else None,
-        lines=[
-            WasteLogLineOut(
-                id=line.id, food_inventory_id=line.food_inventory_id, item_master_id=line.item_master_id,
-                ingredient_name=line.ingredient_name, qty=float(line.qty), unit=line.unit,
-                unit_cost=float(line.unit_cost), line_cost=round(float(line.qty) * float(line.unit_cost), 3),
-            )
-            for line in lines
-        ],
-    )
-
-
-@router.get("/waste-log", response_model=list[WasteLogOut])
-async def list_waste_log(db: AsyncSession = Depends(get_db), _user: User = Depends(kitchen_access)):
-    result = await db.execute(select(WasteLog).order_by(WasteLog.date.desc()))
-    return [await _waste_log_out(db, w) for w in result.scalars().all()]
-
-
-@router.post("/waste-log", response_model=WasteLogOut, status_code=201)
-async def log_waste(
-    payload: WasteLogIn, db: AsyncSession = Depends(get_db), user: User = Depends(kitchen_access)
-):
-    """Logging waste deducts food_inventory immediately — the stock is
-    physically spoiled/gone regardless of paperwork. The supervisor review
-    that follows (see approvals.py's waste_log branch) is an audit step, not
-    a gate, and never reverses this deduction."""
-    if not payload.lines:
-        raise HTTPException(400, "Add at least one wasted item")
-
-    waste = WasteLog(date=payload.date, reason=payload.reason, notes=payload.notes, logged_by=user.id)
-    db.add(waste)
-    await db.flush()
-
-    for line in payload.lines:
-        if line.qty <= 0:
-            raise HTTPException(400, "Quantity must be greater than zero")
-        item = await db.get(FoodInventory, line.food_inventory_id)
-        if not item:
-            raise HTTPException(404, "One of the selected stock items was not found")
-        await _consume_fefo(db, line.food_inventory_id, line.qty)
-        item_master = (
-            await db.execute(
-                select(ItemMaster).where(
-                    ItemMaster.stock_type == "food", ItemMaster.stock_id == item.id
-                )
-            )
-        ).scalars().first()
-        db.add(
-            WasteLogLine(
-                waste_log_id=waste.id,
-                food_inventory_id=item.id,
-                item_master_id=item_master.id if item_master else None,
-                ingredient_name=item.name,
-                qty=line.qty,
-                unit=item.unit,
-                unit_cost=float(item.cost),
-            )
-        )
-
-    await log_activity(db, user, "Logged kitchen waste", f"{payload.reason} — {len(payload.lines)} item(s)")
-    await db.commit()
-    await db.refresh(waste)
-    return await _waste_log_out(db, waste)
-
-
 async def _residence_pdf_context(db: AsyncSession) -> dict:
     residence = (await db.execute(select(ResidenceSettings).limit(1))).scalar_one_or_none()
     return {
@@ -916,78 +563,6 @@ async def _residence_pdf_context(db: AsyncSession) -> dict:
         "currency": residence.currency if residence else "KWD",
         "logo_data_uri": logo_data_uri(residence.logo_path) if residence else None,
     }
-
-
-@router.get("/meal-log/{meal_id}/invoice-pdf")
-async def meal_log_invoice_pdf(
-    meal_id: uuid.UUID, db: AsyncSession = Depends(get_db), _user: User = Depends(kitchen_access)
-):
-    meal = await db.get(MealLog, meal_id)
-    if not meal:
-        raise HTTPException(404, "Meal log entry not found")
-    total = float(meal.unit_cost) * meal.qty
-    pdf_bytes = render_pdf(
-        "invoice.html",
-        {
-            **await _residence_pdf_context(db),
-            "title": meal.dish,
-            "subtitle": meal.cost_center or meal.category,
-            "date": meal.date.isoformat(),
-            "line_items": [
-                {"name": meal.dish, "qty": float(meal.qty), "unit": "portions",
-                 "unit_cost": float(meal.unit_cost), "line_total": total}
-            ],
-            "total": total,
-        },
-    )
-    return Response(
-        content=pdf_bytes, media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="meal-log-{meal.id}.pdf"'},
-    )
-
-
-@router.get("/stock-transfers/{transfer_id}/invoice-pdf")
-async def stock_transfer_invoice_pdf(
-    transfer_id: uuid.UUID, db: AsyncSession = Depends(get_db), _user: User = Depends(kitchen_access)
-):
-    transfer = await db.get(StockTransfer, transfer_id)
-    if not transfer:
-        raise HTTPException(404, "Stock transfer not found")
-    lines = (
-        await db.execute(select(StockTransferLine).where(StockTransferLine.transfer_id == transfer.id))
-    ).scalars().all()
-    line_items = []
-    total = 0.0
-    for line in lines:
-        # StockTransferLine has no stored cost — derive it from the current
-        # FoodInventory.cost, falling back to 0 if the stock link was since
-        # nulled out (the same SET NULL scenario the transfer itself tolerates).
-        unit_cost = 0.0
-        if line.food_inventory_id:
-            item = await db.get(FoodInventory, line.food_inventory_id)
-            if item:
-                unit_cost = float(item.cost)
-        line_total = float(line.qty) * unit_cost
-        total += line_total
-        line_items.append(
-            {"name": line.ingredient_name, "qty": float(line.qty), "unit": line.unit,
-             "unit_cost": unit_cost, "line_total": line_total}
-        )
-    pdf_bytes = render_pdf(
-        "invoice.html",
-        {
-            **await _residence_pdf_context(db),
-            "title": f"Raw material transfer — {transfer.reason}",
-            "subtitle": transfer.reason,
-            "date": transfer.date.isoformat(),
-            "line_items": line_items,
-            "total": total,
-        },
-    )
-    return Response(
-        content=pdf_bytes, media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="stock-transfer-{transfer.id}.pdf"'},
-    )
 
 
 # ------------------------------------------------------ weekly meal plans --

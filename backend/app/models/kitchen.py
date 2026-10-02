@@ -5,7 +5,7 @@ from sqlalchemy import CheckConstraint, Date, ForeignKey, Integer, Numeric, Stri
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, TimestampMixin, UUIDPKMixin
+from app.db.base import Base, TimestampMixin, UUIDPKMixin, WorkflowMixin
 
 
 class Recipe(Base, UUIDPKMixin, TimestampMixin):
@@ -82,7 +82,7 @@ class FoodInventory(Base, UUIDPKMixin, TimestampMixin):
 
     name: Mapped[str] = mapped_column(String(150))
     category: Mapped[str] = mapped_column(String(60))
-    qty: Mapped[float] = mapped_column(Numeric(12, 3))
+    qty: Mapped[float] = mapped_column(Numeric(12, 3), default=0)
     unit: Mapped[str] = mapped_column(String(20))
     batch: Mapped[str | None] = mapped_column(String(40), nullable=True)
     expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -113,27 +113,43 @@ class FoodInventoryBatch(Base, UUIDPKMixin):
     expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
     cost: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
     received_date: Mapped[date] = mapped_column(Date)
+    # The location (cost center) this lot physically sits in.
+    cost_center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cost_centers.id", ondelete="RESTRICT"))
 
 
-class MealLog(Base, UUIDPKMixin, TimestampMixin):
+class MealLog(Base, UUIDPKMixin, TimestampMixin, WorkflowMixin):
+    """Header of a meal-service transaction (see MealLogLine for the dishes).
+    The cost center is both the transaction's title and the location whose
+    stock the recipe ingredients are drawn from."""
+
     __tablename__ = "meal_log"
 
+    code: Mapped[str] = mapped_column(String(20), unique=True)  # ML-1001
     date: Mapped[date] = mapped_column(Date)
-    category: Mapped[str] = mapped_column(String(40))
-    dish: Mapped[str] = mapped_column(String(200))
-    recipe_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True
-    )
-    qty: Mapped[int] = mapped_column(Integer)
-    unit_cost: Mapped[float] = mapped_column(Numeric(10, 3), default=0)
+    cost_center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cost_centers.id", ondelete="RESTRICT"))
+    category: Mapped[str | None] = mapped_column(String(40), nullable=True)
     logged_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
-    # Owner-managed list (Settings -> Cost Centers), e.g. "Villa Security
-    # Team" or "Al Sabah Family". Falls back to showing `category` alone
-    # when blank.
+    # Label snapshot of the cost center at creation, so a later rename of
+    # the Settings list doesn't rewrite history (same convention as category).
     cost_center: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+
+class MealLogLine(Base, UUIDPKMixin):
+    __tablename__ = "meal_log_lines"
+
+    meal_log_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meal_log.id", ondelete="CASCADE"))
+    recipe_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True
+    )
+    dish: Mapped[str] = mapped_column(String(200))
+    qty: Mapped[int] = mapped_column(Integer)
+    unit: Mapped[str] = mapped_column(String(20), default="portion")
+    # Cost per portion; refreshed from the recipe's live cost when the
+    # transaction is submitted, then frozen as the invoice figure.
+    unit_cost: Mapped[float] = mapped_column(Numeric(10, 3), default=0)
 
 
 class ConsumptionLog(Base, UUIDPKMixin):
@@ -160,14 +176,22 @@ class ConsumptionLog(Base, UUIDPKMixin):
     )
 
 
-class StockTransfer(Base, UUIDPKMixin, TimestampMixin):
-    """A direct raw-material withdrawal from food_inventory, logged without
-    going through a Recipe/MealLog — for urgent situations where there's no
-    time to build a recipe first. See StockTransferLine for the items."""
+class StockTransfer(Base, UUIDPKMixin, TimestampMixin, WorkflowMixin):
+    """Moves raw materials from one cost center (location) to another,
+    without going through a Recipe/MealLog — for when there's no time to
+    build a recipe first. Company stock is unchanged; only the location of
+    the stock moves. See StockTransferLine for the items."""
 
     __tablename__ = "stock_transfers"
 
+    code: Mapped[str] = mapped_column(String(20), unique=True)  # RT-1001
     date: Mapped[date] = mapped_column(Date)
+    from_cost_center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cost_centers.id", ondelete="RESTRICT"))
+    # Null only on transfers recorded before destinations existed, when this
+    # was a pure withdrawal.
+    to_cost_center_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cost_centers.id", ondelete="RESTRICT"), nullable=True
+    )
     reason: Mapped[str] = mapped_column(String(200))
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
     logged_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -185,6 +209,8 @@ class StockTransferLine(Base, UUIDPKMixin):
     ingredient_name: Mapped[str] = mapped_column(String(150))
     qty: Mapped[float] = mapped_column(Numeric(12, 3))
     unit: Mapped[str] = mapped_column(String(20))
+    # Weighted cost of the batches actually moved, frozen when submitted.
+    unit_cost: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
 
 
 class WasteReason(Base, UUIDPKMixin):
@@ -205,21 +231,21 @@ class CostCenter(Base, UUIDPKMixin):
     label: Mapped[str] = mapped_column(String(60), unique=True)
 
 
-class WasteLog(Base, UUIDPKMixin, TimestampMixin):
-    """A batch of spoiled/wasted items logged in one go. FoodInventory is
-    deducted immediately when this is created (the stock is physically gone
-    regardless of paperwork) — `status` is an after-the-fact supervisor
-    review, not a gate. See WasteLogLine for the individual items."""
+class WasteLog(Base, UUIDPKMixin, TimestampMixin, WorkflowMixin):
+    """A batch of spoiled/wasted items logged in one go. On submit, the
+    stock is deducted from `cost_center_id`'s location. See WasteLogLine
+    for the individual items."""
 
     __tablename__ = "waste_log"
 
+    code: Mapped[str] = mapped_column(String(20), unique=True)  # WL-1001
     date: Mapped[date] = mapped_column(Date)
+    cost_center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cost_centers.id", ondelete="RESTRICT"))
     # Denormalized snapshot, not an FK to WasteReason — same convention as
     # MealLog.category, so a later rename/delete of the reason list doesn't
     # rewrite history.
     reason: Mapped[str] = mapped_column(String(60))
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="Pending Review")  # Pending Review | Reviewed | Flagged
     logged_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

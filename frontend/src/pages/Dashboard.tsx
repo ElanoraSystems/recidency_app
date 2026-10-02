@@ -104,16 +104,19 @@ function KitchenConsumptionCard() {
 
   const today = todayIso();
   const monthPrefix = today.slice(0, 7);
-  const todayLogs = (mealLog ?? []).filter((m) => m.date === today);
-  const monthLogs = (mealLog ?? []).filter((m) => m.date.slice(0, 7) === monthPrefix);
-  const todayValue = todayLogs.reduce((s, m) => s + m.qty * m.unit_cost, 0);
-  const monthValue = monthLogs.reduce((s, m) => s + m.qty * m.unit_cost, 0);
-  const todayServed = todayLogs.reduce((s, m) => s + m.qty, 0);
-  const monthServed = monthLogs.reduce((s, m) => s + m.qty, 0);
+  // Drafts have not served anything yet; only submitted-onward meals count.
+  const posted = (mealLog ?? []).filter((m) => m.status !== "Draft");
+  const portions = (m: MealLogEntry) => m.lines.reduce((s, l) => s + l.qty, 0);
+  const todayLogs = posted.filter((m) => m.date === today);
+  const monthLogs = posted.filter((m) => m.date.slice(0, 7) === monthPrefix);
+  const todayValue = todayLogs.reduce((s, m) => s + m.total, 0);
+  const monthValue = monthLogs.reduce((s, m) => s + m.total, 0);
+  const todayServed = todayLogs.reduce((s, m) => s + portions(m), 0);
+  const monthServed = monthLogs.reduce((s, m) => s + portions(m), 0);
   const avgCost = monthServed ? monthValue / monthServed : 0;
 
   const byCat: Record<string, number> = {};
-  for (const m of monthLogs) byCat[m.category] = (byCat[m.category] ?? 0) + m.qty * m.unit_cost;
+  for (const m of monthLogs) byCat[m.cost_center] = (byCat[m.cost_center] ?? 0) + m.total;
   const catKeys = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a]);
   const catRows = catKeys.map((c, i) => ({ label: c, value: byCat[c], color: catColor(i) }));
 
@@ -131,7 +134,7 @@ function KitchenConsumptionCard() {
       </p>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <h3 className="mb-3 text-[15px] font-semibold">Consumption value by category — this month</h3>
+          <h3 className="mb-3 text-[15px] font-semibold">Consumption value by cost center — this month</h3>
           {catRows.length === 0 ? <EmptyState label="No meals logged this month yet." /> : <BarChartH rows={catRows} fmt={(v) => `KWD ${v.toFixed(2)}`} />}
         </Card>
         <Card>

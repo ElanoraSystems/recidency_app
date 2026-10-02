@@ -11,6 +11,7 @@ from app.models.facilities import (  # noqa: F401
 from app.models.family_guests import Event, FamilyMember, Guest  # noqa: F401
 from app.models.finance import Document, DocumentFile, Expense, ResidenceSettings  # noqa: F401
 from app.models.governance import ActivityLog  # noqa: F401
+from app.models.stock import AuditLog, InventoryBalance, StockMovement  # noqa: F401
 from app.models.kitchen import (  # noqa: F401
     ConsumptionLog,
     FoodInventory,

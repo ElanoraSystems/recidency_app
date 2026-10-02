@@ -11,13 +11,16 @@ from app.api.v1 import (
     facilities,
     generic_routes,
     kitchen,
+    kitchen_tx,
     maintenance,
     patrol,
     people,
     purchasing,
     settings as settings_router,
     stock_count,
+    stock_ledger,
     tasks,
+    transactions,
     vehicles,
 )
 from app.core.config import get_settings
@@ -40,6 +43,9 @@ app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(dashboard.router, prefix=API_PREFIX)
 app.include_router(people.router, prefix=API_PREFIX)
 app.include_router(kitchen.router, prefix=API_PREFIX)
+app.include_router(kitchen_tx.router, prefix=API_PREFIX)
+app.include_router(transactions.router, prefix=API_PREFIX)
+app.include_router(stock_ledger.router, prefix=API_PREFIX)
 app.include_router(purchasing.router, prefix=API_PREFIX)
 app.include_router(purchasing.item_master_router, prefix=API_PREFIX)
 app.include_router(stock_count.router, prefix=API_PREFIX)

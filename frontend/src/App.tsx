@@ -4,6 +4,7 @@ import { Shell } from "./layout/Shell";
 import { Dashboard } from "./pages/Dashboard";
 import { InventoryPage, StockCountEntryPage } from "./pages/Inventory";
 import { Kitchen, NewRecipePage, RecipeDetailPage } from "./pages/Kitchen";
+import { MealLogPage, TransferPage, WastePage } from "./pages/KitchenTransactions";
 import { Login } from "./pages/Login";
 import { NewPurchaseOrderPage, NewPurchaseRequestPage, Purchasing, ReceiveGoodsPage } from "./pages/Purchasing";
 import { Settings } from "./pages/Settings";
@@ -32,6 +33,12 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="tasks" element={<Tasks />} />
         <Route path="kitchen" element={<Kitchen />} />
+        <Route path="kitchen/meal-log/new" element={<MealLogPage />} />
+        <Route path="kitchen/meal-log/:id" element={<MealLogPage />} />
+        <Route path="kitchen/transfers/new" element={<TransferPage />} />
+        <Route path="kitchen/transfers/:id" element={<TransferPage />} />
+        <Route path="kitchen/waste/new" element={<WastePage />} />
+        <Route path="kitchen/waste/:id" element={<WastePage />} />
         <Route path="kitchen/recipes/new" element={<NewRecipePage />} />
         <Route path="kitchen/recipes/:id" element={<RecipeDetailPage />} />
         <Route path="inventory" element={<InventoryPage />} />

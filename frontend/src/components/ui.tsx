@@ -143,7 +143,8 @@ export function Badge({ children, tone = "neutral" }: { children: ReactNode; ton
 export function statusTone(status: string): Tone {
   const s = status.toLowerCase();
   if (["approved", "active", "completed", "verified", "goods received", "paid", "present", "reviewed"].includes(s)) return "good";
-  if (["pending", "pending approval", "pending review", "proposed", "ordered", "in progress", "assigned"].includes(s)) return "warning";
+  if (["pending", "pending approval", "pending review", "proposed", "ordered", "in progress", "assigned", "submitted", "partially received"].includes(s)) return "warning";
+  if (s === "draft") return "neutral";
   if (["rejected", "overdue", "critical", "absent", "flagged"].includes(s)) return "critical";
   if (["reported", "on leave"].includes(s)) return "serious";
   return "info";

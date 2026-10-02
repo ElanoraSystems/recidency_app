@@ -11,16 +11,14 @@ Run with:  ./venv/bin/python -m app.seed_kitchen_history
 """
 import asyncio
 import random
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy import select
 
 from app.api.v1.kitchen import (
     RecipeIngredientIn,
     _compute_raw_yield_g,
-    _consume_fefo,
     _expand_consumption,
-    _recompute_food_rollup,
     _resolve_recipe,
 )
 from app.api.v1.purchasing import _next_code
@@ -28,10 +26,11 @@ from app.db.session import AsyncSessionLocal
 from app.models.finance import Expense
 from app.models.kitchen import (
     ConsumptionLog,
+    CostCenter,
     FoodInventory,
-    FoodInventoryBatch,
     MealCategory,
     MealLog,
+    MealLogLine,
     Recipe,
     RecipeIngredient,
     StockTransfer,
@@ -45,8 +44,28 @@ from app.models.purchasing import (
 )
 from app.models.tasks import Task, TaskChecklistItem
 from app.models.user import User
+from app.services import stock as stock_service
+from app.services.codes import next_code
 
 random.seed(7)
+
+MAIN_STORE = "Main Store"
+# Destinations the simulated raw-material transfers move stock to.
+TRANSFER_TARGETS = ["Staff", "Guests", "Events"]
+LOCATIONS: dict[str, CostCenter] = {}
+
+
+def _at(day: int) -> datetime:
+    """Backdates a simulated movement to noon on its day."""
+    return datetime.combine(D(day), time(12, 0), tzinfo=timezone.utc)
+
+
+def _stamp(doc, user: User, day: int) -> None:
+    """Simulated history is already signed off: Draft -> ... -> Closed."""
+    when = _at(day)
+    doc.status = "Closed"
+    doc.submitted_by = doc.approved_by = doc.closed_by = user.id
+    doc.submitted_at = doc.approved_at = doc.closed_at = when
 
 TODAY = date.today()
 START = TODAY - timedelta(days=90)
@@ -279,16 +298,24 @@ async def receive_batch(db, item: FoodInventory, item_master: ItemMaster, suppli
     db.add(po_line)
     await db.flush()
 
-    grn = Grn(code=await _next_code(db, Grn, "GRN", 2001), po_id=po.id, supplier_id=supplier.id, date=D(day + 2), received_by=actor.id)
+    main = LOCATIONS[MAIN_STORE]
+    grn = Grn(
+        code=await _next_code(db, Grn, "GRN", 2001), po_id=po.id, supplier_id=supplier.id, date=D(day + 2),
+        received_by=actor.id, receiving_cost_center_id=main.id,
+    )
+    _stamp(grn, actor, day + 2)
     db.add(grn)
     await db.flush()
-    db.add(GrnLine(grn_id=grn.id, po_line_id=po_line.id, name=item.name, ordered_qty=qty, received_qty=qty, unit=item.unit, ordered_price=price, price=price))
-    db.add(FoodInventoryBatch(
-        food_inventory_id=item.id, batch_label=f"{grn.code}", qty=qty,
-        expiry=D(day + 2) + timedelta(days=random.randint(7, 45)), cost=price, received_date=D(day + 2),
+    expiry = D(day + 2) + timedelta(days=random.randint(7, 45))
+    db.add(GrnLine(
+        grn_id=grn.id, po_line_id=po_line.id, name=item.name, ordered_qty=qty, received_qty=qty, unit=item.unit,
+        ordered_price=price, price=price, expiry=expiry, batch_label=grn.code,
     ))
-    await db.flush()
-    await _recompute_food_rollup(db, item.id)
+    movement = await stock_service.post_in(
+        db, stock_type="food", stock_id=item.id, cc_id=main.id, qty=qty, unit_cost=price, txn_type="GRN",
+        txn_id=grn.id, txn_code=grn.code, user=actor, batch_label=grn.code, expiry=expiry, received_date=D(day + 2),
+    )
+    movement.created_at = _at(day + 2)
 
     item_master.last_price = price
     db.add(Expense(
@@ -298,58 +325,97 @@ async def receive_batch(db, item: FoodInventory, item_master: ItemMaster, suppli
     ))
 
 
-async def log_meal(db, recipe: Recipe, meal_category: str, day: int, qty_portions: int, chef: User):
+async def log_meal(db, recipe: Recipe, meal_category: str, day: int, qty_portions: int, chef: User) -> bool:
+    """Returns False (writing nothing) when the main store lacks stock for it."""
     cost, _ = await _resolve_recipe(db, recipe)
+    main = LOCATIONS[MAIN_STORE]
+    scale = qty_portions / (cost.portions or 1)
+    consumed: dict = {}
+    for item, consumed_qty in await _expand_consumption(db, recipe, scale):
+        prev = consumed.get(item.id, (item, 0.0))[1]
+        consumed[item.id] = (item, prev + consumed_qty)
+    needed = [(item, qty) for item, qty in consumed.values() if round(qty, 3) > 0]
+    for item, qty in needed:
+        if await stock_service.balance(db, "food", item.id, main.id) + stock_service.EPS < round(qty, 3):
+            return False
+
     meal = MealLog(
-        date=D(day), category=meal_category, dish=recipe.name, recipe_id=recipe.id,
-        qty=qty_portions, unit_cost=cost.cost_per_portion, logged_by=chef.id,
+        code=await next_code(db, MealLog, "ML", 1001), date=D(day), category=meal_category,
+        cost_center_id=main.id, cost_center=main.label, logged_by=chef.id,
     )
+    _stamp(meal, chef, day)
     db.add(meal)
     await db.flush()
-
-    scale = qty_portions / (cost.portions or 1)
-    leaf_consumption = await _expand_consumption(db, recipe, scale)
-    stock_by_id: dict = {}
-    consumed_by_id: dict = {}
-    for stock, consumed_qty in leaf_consumption:
-        stock_by_id[stock.id] = stock
-        consumed_by_id[stock.id] = consumed_by_id.get(stock.id, 0.0) + consumed_qty
-    for stock_id, consumed_qty in consumed_by_id.items():
-        match = stock_by_id[stock_id]
-        await _consume_fefo(db, stock_id, consumed_qty)
+    db.add(MealLogLine(
+        meal_log_id=meal.id, recipe_id=recipe.id, dish=recipe.name, qty=qty_portions, unit="portion",
+        unit_cost=cost.cost_per_portion,
+    ))
+    for item, qty in needed:
+        movements = await stock_service.post_out(
+            db, stock_type="food", stock_id=item.id, cc_id=main.id, qty=qty, txn_type="MEAL_LOG",
+            txn_id=meal.id, txn_code=meal.code, user=chef,
+        )
+        for m in movements:
+            m.created_at = _at(day)
         db.add(ConsumptionLog(
             date=D(day), recipe_id=recipe.id, dish=recipe.name, meals_served=qty_portions,
-            ingredient=match.name, qty_consumed=round(consumed_qty, 3), unit=match.unit,
-            matched_stock_id=match.id, meal_log_id=meal.id,
+            ingredient=item.name, qty_consumed=round(qty, 3), unit=item.unit,
+            matched_stock_id=item.id, meal_log_id=meal.id,
         ))
+    return True
 
 
-async def log_waste(db, item: FoodInventory, day: int, chef: User):
-    if float(item.qty) <= 0:
-        return
-    waste_qty = round(min(float(item.qty), float(item.qty) * random.uniform(0.05, 0.15)), 2)
+async def log_waste(db, item: FoodInventory, day: int, chef: User) -> bool:
+    main = LOCATIONS[MAIN_STORE]
+    available = await stock_service.balance(db, "food", item.id, main.id)
+    waste_qty = round(min(available, available * random.uniform(0.05, 0.15)), 2)
     if waste_qty <= 0:
-        return
-    reason = random.choice(WASTE_REASONS)
-    waste = WasteLog(date=D(day), reason=reason, notes=None, status="Reviewed", logged_by=chef.id, reviewed_by=chef.id)
+        return False
+    waste = WasteLog(
+        code=await next_code(db, WasteLog, "WL", 1001), date=D(day), reason=random.choice(WASTE_REASONS),
+        cost_center_id=main.id, notes=None, logged_by=chef.id, reviewed_by=chef.id,
+    )
+    _stamp(waste, chef, day)
     db.add(waste)
     await db.flush()
-    db.add(WasteLogLine(waste_log_id=waste.id, food_inventory_id=item.id, ingredient_name=item.name, qty=waste_qty, unit=item.unit, unit_cost=float(item.cost)))
-    await _consume_fefo(db, item.id, waste_qty)
+    movements = await stock_service.post_out(
+        db, stock_type="food", stock_id=item.id, cc_id=main.id, qty=waste_qty, txn_type="WASTE",
+        txn_id=waste.id, txn_code=waste.code, user=chef,
+    )
+    for m in movements:
+        m.created_at = _at(day)
+    db.add(WasteLogLine(
+        waste_log_id=waste.id, food_inventory_id=item.id, ingredient_name=item.name, qty=waste_qty, unit=item.unit,
+        unit_cost=stock_service.weighted_unit_cost(movements),
+    ))
+    return True
 
 
-async def log_transfer(db, item: FoodInventory, day: int, chef: User):
-    if float(item.qty) <= 0:
-        return
-    transfer_qty = round(min(float(item.qty), float(item.qty) * random.uniform(0.08, 0.2)), 2)
+async def log_transfer(db, item: FoodInventory, day: int, chef: User) -> bool:
+    main = LOCATIONS[MAIN_STORE]
+    available = await stock_service.balance(db, "food", item.id, main.id)
+    transfer_qty = round(min(available, available * random.uniform(0.08, 0.2)), 2)
     if transfer_qty <= 0:
-        return
-    reason = random.choice(TRANSFER_REASONS)
-    transfer = StockTransfer(date=D(day), reason=reason, notes=None, logged_by=chef.id)
+        return False
+    target = LOCATIONS[random.choice(TRANSFER_TARGETS)]
+    transfer = StockTransfer(
+        code=await next_code(db, StockTransfer, "RT", 1001), date=D(day), reason=random.choice(TRANSFER_REASONS),
+        from_cost_center_id=main.id, to_cost_center_id=target.id, notes=None, logged_by=chef.id,
+    )
+    _stamp(transfer, chef, day)
     db.add(transfer)
     await db.flush()
-    db.add(StockTransferLine(transfer_id=transfer.id, food_inventory_id=item.id, ingredient_name=item.name, qty=transfer_qty, unit=item.unit))
-    await _consume_fefo(db, item.id, transfer_qty)
+    movements = await stock_service.post_transfer(
+        db, stock_type="food", stock_id=item.id, from_cc=main.id, to_cc=target.id, qty=transfer_qty,
+        txn_type="TRANSFER", txn_id=transfer.id, txn_code=transfer.code, user=chef,
+    )
+    for m in movements:
+        m.created_at = _at(day)
+    db.add(StockTransferLine(
+        transfer_id=transfer.id, food_inventory_id=item.id, ingredient_name=item.name, qty=transfer_qty,
+        unit=item.unit, unit_cost=stock_service.weighted_unit_cost(movements),
+    ))
+    return True
 
 
 def task_status_for(days_ago: int) -> tuple[str, bool]:
@@ -399,6 +465,9 @@ async def main():
             select(StaffProfile, User).join(User, StaffProfile.user_id == User.id).where(User.name == "Ramon Villanueva")
         )).one()
 
+        for cc in (await db.execute(select(CostCenter))).scalars().all():
+            LOCATIONS[cc.label] = cc
+
         await ensure_meal_categories(db)
         suppliers = await ensure_suppliers(db)
         food_by_name = await ensure_food_items(db, suppliers)
@@ -422,6 +491,7 @@ async def main():
         restock_schedule = build_restock_schedule(food_by_name, base_cost_for_name)
         meal_category_list = list(MEAL_CATEGORY_RECIPES.keys())
         meals_logged = 0
+        meals_skipped = 0
         waste_logged = 0
         transfers_logged = 0
         tasks_created = 0
@@ -442,19 +512,19 @@ async def main():
                 recipe_name = random.choice(MEAL_CATEGORY_RECIPES[meal_category])
                 recipe = recipes_by_name[recipe_name]
                 qty_portions = random.randint(2, 6)
-                await log_meal(db, recipe, meal_category, day, qty_portions, chef_user)
-                meals_logged += 1
+                if await log_meal(db, recipe, meal_category, day, qty_portions, chef_user):
+                    meals_logged += 1
+                else:
+                    meals_skipped += 1
 
             if random.random() < 0.15:
                 candidates = [f for f in food_by_name.values() if float(f.qty) > 0]
-                if candidates:
-                    await log_waste(db, random.choice(candidates), day, chef_user)
+                if candidates and await log_waste(db, random.choice(candidates), day, chef_user):
                     waste_logged += 1
 
             if random.random() < 0.12:
                 candidates = [f for f in food_by_name.values() if float(f.qty) > 0]
-                if candidates:
-                    await log_transfer(db, random.choice(candidates), day, chef_user)
+                if candidates and await log_transfer(db, random.choice(candidates), day, chef_user):
                     transfers_logged += 1
 
             if random.random() < 0.35:
@@ -465,7 +535,7 @@ async def main():
             # Refresh food_by_name qty/cost view for next iteration's decisions.
             food_by_name = {f.name: f for f in (await db.execute(select(FoodInventory))).scalars().all()}
 
-        print(f"Restocks: {restocks_done}, meals logged: {meals_logged}, waste events: {waste_logged}, transfers: {transfers_logged}, kitchen tasks: {tasks_created}")
+        print(f"Restocks: {restocks_done}, meals logged: {meals_logged} (skipped, no stock: {meals_skipped}), waste events: {waste_logged}, transfers: {transfers_logged}, kitchen tasks: {tasks_created}")
         print(f"Window: {D(0)} to {D(90)}")
 
 

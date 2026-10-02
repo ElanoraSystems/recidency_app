@@ -7,23 +7,30 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_module
-from app.api.v1.kitchen import _consume_fefo, _recompute_food_rollup
 from app.crud.activity import log_activity
 from app.db.session import get_db
-from app.models.kitchen import FoodInventory, FoodInventoryBatch
+from app.models.kitchen import CostCenter, FoodInventory
 from app.models.purchasing import Inventory, ItemMaster, StockCount, StockCountLine
 from app.models.user import User
+from app.services import stock
 
 router = APIRouter(prefix="/stock-counts", tags=["inventory"])
 inventory_access = require_module("inventory")
 
+DEFAULT_LOCATION = "Main Store"
 
-async def _stock_qty(stock_type: str, stock_id: uuid.UUID, db: AsyncSession) -> tuple[float, float]:
+
+async def _book_qty_and_cost(
+    db: AsyncSession, stock_type: str, stock_id: uuid.UUID, cc_id: uuid.UUID
+) -> tuple[float, float]:
+    """Book qty is the balance at the counted location; cost is the item's
+    current weighted cost."""
+    qty = await stock.balance(db, stock_type, stock_id, cc_id)
     if stock_type == "food":
-        stock = await db.get(FoodInventory, stock_id)
-        return (float(stock.qty), float(stock.cost)) if stock else (0.0, 0.0)
-    stock = await db.get(Inventory, stock_id)
-    return (float(stock.stock), float(stock.avg_price)) if stock else (0.0, 0.0)
+        row = await db.get(FoodInventory, stock_id)
+        return (qty, float(row.cost)) if row else (0.0, 0.0)
+    row = await db.get(Inventory, stock_id)
+    return (qty, float(row.avg_price)) if row else (0.0, 0.0)
 
 
 class StockCountLineOut(BaseModel):
@@ -40,6 +47,8 @@ class StockCountOut(BaseModel):
     id: uuid.UUID
     date: date
     status: str
+    cost_center_id: uuid.UUID | None
+    cost_center: str | None
     counted_by: uuid.UUID | None
     notes: str | None
     lines: list[StockCountLineOut]
@@ -49,8 +58,13 @@ class StockCountSummary(BaseModel):
     id: uuid.UUID
     date: date
     status: str
+    cost_center: str | None
     item_count: int
     variance_value: float
+
+
+class StockCountIn(BaseModel):
+    cost_center_id: uuid.UUID | None = None
 
 
 async def _line_out(db: AsyncSession, line: StockCountLine, item: ItemMaster | None = None) -> StockCountLineOut:
@@ -78,6 +92,8 @@ async def _count_out(db: AsyncSession, count: StockCount) -> StockCountOut:
         id=count.id,
         date=count.date,
         status=count.status,
+        cost_center_id=count.cost_center_id,
+        cost_center=await stock.cost_center_label(db, count.cost_center_id) if count.cost_center_id else None,
         counted_by=count.counted_by,
         notes=count.notes,
         lines=[await _line_out(db, line, items.get(line.item_master_id)) for line in lines],
@@ -85,16 +101,25 @@ async def _count_out(db: AsyncSession, count: StockCount) -> StockCountOut:
 
 
 @router.post("", response_model=StockCountOut, status_code=201)
-async def create_stock_count(db: AsyncSession = Depends(get_db), user: User = Depends(inventory_access)):
-    """Starts a Draft count, snapshotting every active item's book qty/cost
-    so stock movement during the count doesn't shift the baseline."""
-    count = StockCount(date=date.today(), status="Draft", counted_by=user.id)
+async def create_stock_count(
+    payload: StockCountIn | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(inventory_access),
+):
+    """Starts a Draft count of one location, snapshotting every active item's
+    book qty there so stock movement during the count doesn't shift the baseline."""
+    cc_id = payload.cost_center_id if payload else None
+    if cc_id is None:
+        cc_id = (await db.execute(select(CostCenter.id).where(CostCenter.label == DEFAULT_LOCATION))).scalar_one_or_none()
+    if cc_id is None or not await db.get(CostCenter, cc_id):
+        raise HTTPException(400, "Select a cost center to count")
+    count = StockCount(date=date.today(), status="Draft", counted_by=user.id, cost_center_id=cc_id)
     db.add(count)
     await db.flush()
 
     items = (await db.execute(select(ItemMaster).where(ItemMaster.active))).scalars().all()
     for item in items:
-        qty, cost = await _stock_qty(item.stock_type, item.stock_id, db)
+        qty, cost = await _book_qty_and_cost(db, item.stock_type, item.stock_id, cc_id)
         db.add(StockCountLine(count_id=count.id, item_master_id=item.id, book_qty=qty, unit_cost=cost))
 
     await log_activity(db, user, "Started stock count", f"{len(items)} items")
@@ -115,6 +140,7 @@ async def list_stock_counts(db: AsyncSession = Depends(get_db), _user: User = De
         )
         out.append(StockCountSummary(
             id=count.id, date=count.date, status=count.status,
+            cost_center=await stock.cost_center_label(db, count.cost_center_id) if count.cost_center_id else None,
             item_count=len(lines), variance_value=round(variance_value, 2),
         ))
     return out
@@ -160,41 +186,40 @@ async def update_stock_count_line(
 async def submit_stock_count(
     count_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(inventory_access)
 ):
-    """Posts each counted line's variance onto real stock. A food shortfall
-    comes off the earliest-expiring batch first (shrinkage most plausibly
-    hits what's about to expire); a surplus lands as a new no-expiry batch."""
+    """Posts each counted line's variance onto the counted location. A
+    shortfall comes off the earliest-expiring batches first (shrinkage most
+    plausibly hits what's about to expire); a surplus lands as a new
+    no-expiry batch."""
     count = await db.get(StockCount, count_id)
     if not count:
         raise HTTPException(404, "Stock count not found")
     if count.status != "Draft":
         raise HTTPException(400, "This count was already submitted")
+    if not count.cost_center_id:
+        raise HTTPException(400, "This count has no location")
 
+    txn_code = f"SC-{str(count.id)[:6].upper()}"
     lines = (await db.execute(select(StockCountLine).where(StockCountLine.count_id == count_id))).scalars().all()
     for line in lines:
         if line.counted_qty is None:
             continue
         variance = float(line.counted_qty) - float(line.book_qty)
-        if variance == 0:
+        if abs(variance) < stock.EPS:
             continue
         item = await db.get(ItemMaster, line.item_master_id)
         if not item:
             continue
-        if item.stock_type == "food":
-            if variance < 0:
-                await _consume_fefo(db, item.stock_id, -variance)
-            else:
-                db.add(
-                    FoodInventoryBatch(
-                        food_inventory_id=item.stock_id, batch_label="Count adjustment",
-                        qty=variance, expiry=None, cost=float(line.unit_cost), received_date=date.today(),
-                    )
-                )
-                await db.flush()
-                await _recompute_food_rollup(db, item.stock_id)
+        if variance < 0:
+            await stock.post_out(
+                db, stock_type=item.stock_type, stock_id=item.stock_id, cc_id=count.cost_center_id, qty=-variance,
+                txn_type="COUNT", txn_id=count.id, txn_code=txn_code, user=user,
+            )
         else:
-            stock = await db.get(Inventory, item.stock_id)
-            if stock:
-                stock.stock = max(0, float(stock.stock) + variance)
+            await stock.post_in(
+                db, stock_type=item.stock_type, stock_id=item.stock_id, cc_id=count.cost_center_id, qty=variance,
+                unit_cost=float(line.unit_cost), txn_type="COUNT", txn_id=count.id, txn_code=txn_code, user=user,
+                batch_label="Count adjustment",
+            )
 
     count.status = "Submitted"
     count.counted_by = user.id

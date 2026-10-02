@@ -18,7 +18,9 @@ from app.models.family_guests import Event, FamilyMember, Guest
 from app.models.finance import Document, Expense, ResidenceSettings
 from app.models.governance import ActivityLog
 from app.api.v1.kitchen import _load_uom_map, _resolve_ingredient_qty, compute_recipe_cost
-from app.models.kitchen import FoodInventory, MealLog, MenuOption, ProposedMenu, Recipe, RecipeIngredient
+from app.models.kitchen import (
+    CostCenter, FoodInventory, MealLog, MealLogLine, MenuOption, ProposedMenu, Recipe, RecipeIngredient,
+)
 from app.models.people import Attendance, LeaveRequest, Shift, StaffProfile
 from app.models.purchasing import (
     Grn, GrnLine, Inventory, ItemMaster, PoLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine,
@@ -26,6 +28,7 @@ from app.models.purchasing import (
 )
 from app.models.tasks import GardenTask, PoolLog, Task, TaskChecklistItem, TaskTemplate
 from app.models.user import FamilyAccount, FamilyModuleAccess, Role, RoleModuleAccess, User
+from app.services import stock as stock_service
 
 DEV_PASSWORD = "password123"
 
@@ -319,6 +322,10 @@ async def seed() -> None:
             recipes[name] = recipe
 
         stock_by_id = {f.id: f for f in food_inventory.values()}
+        # Every location-less record belongs to the main store; the cost
+        # center itself is created by the migration that introduced locations.
+        main_store = (await db.execute(select(CostCenter).where(CostCenter.label == "Main Store"))).scalar_one()
+        meal_seq = 0
         meal_defs = [
             (D(0), "Staff Meals", "Lentil & Cumin Soup", "Lentil & Cumin Soup", 9),
             (D(0), "Gastro", "Saffron Rice with Grilled Hammour", "Saffron Rice with Grilled Hammour", 4),
@@ -334,17 +341,20 @@ async def seed() -> None:
             # Reuses the same live-costing logic the API uses (see
             # app/api/v1/kitchen.py) rather than re-deriving it here, so this
             # can't drift from how real meal logging actually computes cost.
-            stock_unit_labels = {stock_by_id[i.food_inventory_id].unit for i in ingredients if i.food_inventory_id in stock_by_id}
-            override_ids = {i.override_unit_id for i in ingredients if i.override_unit_id}
-            uom_by_label2, uom_by_id2 = await _load_uom_map(db, stock_unit_labels, override_ids)
+            uom_by_label2, uom_by_id2 = await _load_uom_map(db)
             resolved = []
             for i in ingredients:
                 stock = stock_by_id.get(i.food_inventory_id)
                 qty_conv, _ = _resolve_ingredient_qty(i, stock, uom_by_label2, uom_by_id2)
                 resolved.append((qty_conv, float(stock.cost) if stock else 0.0, float(i.yield_pct)))
             unit_cost = compute_recipe_cost(recipe, resolved).cost_per_portion
-            db.add(MealLog(date=meal_date, category=category, dish=dish, recipe_id=recipe.id, qty=qty,
-                            unit_cost=unit_cost, logged_by=staff_users["stf-2"].id, notes=""))
+            meal_seq += 1
+            meal = MealLog(code=f"ML-{1000 + meal_seq}", date=meal_date, category=category, cost_center_id=main_store.id,
+                           cost_center=main_store.label, logged_by=staff_users["stf-2"].id, notes="", status="Closed")
+            db.add(meal)
+            await db.flush()
+            db.add(MealLogLine(meal_log_id=meal.id, recipe_id=recipe.id, dish=dish, qty=qty, unit="portion",
+                               unit_cost=unit_cost))
 
         db.add(ProposedMenu(occasion="Tomorrow's Lunch", occasion_type="Lunch", for_date=D(1), category="Gastro",
                              created_by=staff_users["stf-2"].id, status="Proposed", notes="Owner to confirm main dish."))
@@ -414,7 +424,8 @@ async def seed() -> None:
                         name="All-Purpose Cleaner", qty=20, unit="bottle", price=1.9, last_price=1.75, received_qty=20)
         db.add(line1)
         await db.flush()
-        grn1 = Grn(code="GRN-2001", po_id=po1.id, supplier_id=sparkle.id, date=D(-3), received_by=staff_users["stf-3"].id)
+        grn1 = Grn(code="GRN-2001", po_id=po1.id, supplier_id=sparkle.id, date=D(-3), received_by=staff_users["stf-3"].id,
+                   receiving_cost_center_id=main_store.id, status="Closed")
         db.add(grn1)
         await db.flush()
         db.add(GrnLine(grn_id=grn1.id, po_line_id=line1.id, name="All-Purpose Cleaner", ordered_qty=20,
@@ -531,6 +542,11 @@ async def seed() -> None:
 
         db.add(ActivityLog(actor_id=owner_user.id, actor_name=owner_user.name, role_label="Owner / Admin",
                             action="Seeded database", detail="Initial local dev data load"))
+
+        # Stock above was seeded as bare quantities; give it an opening
+        # position so the movement ledger and location balances cover it.
+        await db.flush()
+        await stock_service.ensure_opening_balances(db, main_store.id, owner_user)
 
         await db.commit()
         print(f"Seed complete. Dev login password for every seeded user: '{DEV_PASSWORD}'")

@@ -19,13 +19,20 @@ routers = [
     # is hand-written in purchasing.py, since GET needs to join to Stock for
     # category/avg_price and POST/PATCH need server-generated `code`.
     make_router(UnitOfMeasure, prefix="/units-of-measure", tag="purchasing", module="purchasing", order_by="label"),
-    make_router(Inventory, prefix="/inventory", tag="inventory", module="inventory", order_by="name"),
+    # Quantities are owned by the stock ledger (app/services/stock.py): they
+    # change only through GRNs, transfers, waste, meals and counts, never by
+    # a direct write here.
+    make_router(
+        Inventory, prefix="/inventory", tag="inventory", module="inventory", order_by="name",
+        skip_write={"id", "created_at", "updated_at", "stock"},
+    ),
     make_router(
         FoodInventory,
         prefix="/kitchen/food-inventory",
         tag="kitchen",
         module="kitchen",
         order_by="expiry",
+        skip_write={"id", "created_at", "updated_at", "qty", "expiry", "batch"},
     ),
     make_router(
         MaintenanceRequest,

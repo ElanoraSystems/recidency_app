@@ -23,3 +23,8 @@ export function monthLabel(iso: string): string {
 export function fmtDate(iso: string): string {
   return new Date(iso + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
+
+// For full timestamps (with time zone) such as audit entries and ledger rows.
+export function fmtDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}

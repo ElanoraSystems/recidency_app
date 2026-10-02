@@ -91,6 +91,9 @@ function InboxView({ pending }: { pending?: ApprovalItem[] }) {
       qc.invalidateQueries({ queryKey: ["maintenance-requests"] });
       qc.invalidateQueries({ queryKey: ["weekly-meal-plans"] });
       qc.invalidateQueries({ queryKey: ["waste-log"] });
+      // Rejecting a waste log reverses its stock deduction.
+      qc.invalidateQueries({ queryKey: ["stock-balances"] });
+      qc.invalidateQueries({ queryKey: ["food-inventory"] });
       setDetail(null);
     },
   });
