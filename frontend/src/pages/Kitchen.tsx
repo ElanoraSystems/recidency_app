@@ -475,6 +475,8 @@ export function NewRecipePage() {
   const [form, setForm] = useState({
     name: "", category: "Dinner",
     allergens: "", method: "", notes: "",
+    // Deliberately empty: the chef states the portion, there is no default.
+    portion_size_g: "",
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -484,6 +486,7 @@ export function NewRecipePage() {
     try {
       const created = await create.mutateAsync({
         ...form,
+        portion_size_g: Number(form.portion_size_g),
         allergens: form.allergens ? form.allergens.split(",").map((s) => s.trim()).filter(Boolean) : [],
         ingredients: [],
       } as never);
@@ -514,6 +517,16 @@ export function NewRecipePage() {
               value={form.allergens} onChange={(e) => setForm((s) => ({ ...s, allergens: e.target.value }))} />
           </label>
         </div>
+        <label className="flex max-w-xs flex-col gap-1 text-[13px] font-medium">Portion size (g) *
+          <input
+            required type="number" min={1} step="any" placeholder="e.g. 250"
+            className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+            value={form.portion_size_g} onChange={(e) => setForm((s) => ({ ...s, portion_size_g: e.target.value }))}
+          />
+          <span className="text-[11.5px] font-normal" style={{ color: "var(--ink-400)" }}>
+            Weight of one served portion. The number of portions and cost per portion are worked out from this.
+          </span>
+        </label>
         <label className="flex flex-col gap-1 text-[13px] font-medium">Preparation method
           <textarea placeholder="Mise en place & preparation steps" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
             value={form.method} onChange={(e) => setForm((s) => ({ ...s, method: e.target.value }))} />
@@ -524,8 +537,8 @@ export function NewRecipePage() {
         </label>
         <p className="text-[12px]" style={{ color: "var(--ink-400)" }}>
           On the next screen: add raw material line items (item, qty, unit, cost, yield) — raw yield is calculated
-          automatically from those quantities. Then set preparation loss (or the after-cook weight directly) and
-          portioning.
+          automatically from those quantities. Then set preparation loss (or the after-cook weight directly); portion size can be
+          adjusted there too.
         </p>
         {error && (
           <div className="rounded-lg px-3 py-2 text-[12.5px]" style={{ background: "var(--status-critical-bg)", color: "var(--status-critical)" }}>
