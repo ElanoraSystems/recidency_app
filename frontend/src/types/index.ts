@@ -655,3 +655,22 @@ export interface MenuPlanEntry {
   day_of_week: string;
   dish_name: string;
 }
+
+export interface CostOfSalesRow {
+  id: string;
+  period: string;
+  cost_center_id: string;
+  cost_center: string;
+  stock_type: "food" | "general";
+  stock_count_id: string | null;
+  count_date: string;
+  opening_value: number;
+  purchases: number;
+  transfers_in: number;
+  transfers_out: number;
+  closing_value: number;
+  cost_of_sales: number;
+  meals_value: number;
+  waste_value: number;
+  count_variance: number;
+}

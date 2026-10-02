@@ -76,12 +76,19 @@ export function Kitchen() {
 
 function RecipesTab() {
   const { data, isLoading } = useList<Recipe>("recipes", "/kitchen/recipes");
+  const [search, setSearch] = useState("");
   if (isLoading) return <Spinner />;
+  const q = search.trim().toLowerCase();
+  const shown = (data ?? []).filter((r) => !q || r.name.toLowerCase().includes(q));
   return (
     <div>
-      {!data || data.length === 0 ? <EmptyState label="No recipes yet." /> : (
+      <input
+        className="mb-4 w-full max-w-sm rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+        placeholder="Search recipes by name…" value={search} onChange={(e) => setSearch(e.target.value)}
+      />
+      {!data || data.length === 0 ? <EmptyState label="No recipes yet." /> : shown.length === 0 ? <EmptyState label="No recipes match your search." /> : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.map((r) => (
+          {shown.map((r) => (
             <Link key={r.id} to={`/kitchen/recipes/${r.id}`}>
               <Card className="cursor-pointer">
                 <div className="mb-1 flex items-start justify-between gap-2">
@@ -148,6 +155,7 @@ export function RecipeDetailPage() {
     { food_inventory_id: "", sub_recipe_id: "", qty: 0, yield_pct: 100, override_unit_id: "" }
   );
   const [error, setError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   // Lets Enter (in the qty/yield fields) add the ingredient and jump focus
   // straight back to the item picker, so adding several ingredients in a
   // row doesn't need a mouse trip back up to the dropdown each time.
@@ -172,7 +180,12 @@ export function RecipeDetailPage() {
       })).data,
     // Stays open and refreshes with the saved recipe — closing after every
     // single line item made it impossible to add more than one in a row.
-    onSuccess: (updated) => { qc.invalidateQueries({ queryKey: ["recipes"] }); setRecipe(updated); setError(null); },
+    onSuccess: (updated) => {
+      qc.invalidateQueries({ queryKey: ["recipes"] });
+      setRecipe(updated);
+      setError(null);
+      setSavedAt(new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }));
+    },
     onError: (err: unknown) => setError(saveErrorMessage(err)),
   });
 
@@ -182,6 +195,13 @@ export function RecipeDetailPage() {
   // blocks any transitive cycle) — filtering it out of the picker avoids
   // an obvious dead-end pick before that round-trip even happens.
   const subRecipeOptions = (allRecipes ?? []).filter((r) => r.id !== recipe.id).sort((a, b) => a.name.localeCompare(b.name));
+
+  // An ingredient picked but not yet added would be lost on leaving; Save adds it.
+  const pendingIngredient = source === "stock" ? !!ing.food_inventory_id : !!ing.sub_recipe_id;
+  function saveAll() {
+    if (pendingIngredient) addIngredient();
+    else save.mutate({ ingredients: recipe!.ingredients.map(toPayload) });
+  }
 
   function addIngredient() {
     if (source === "stock" && !ing.food_inventory_id) return;
@@ -242,8 +262,21 @@ export function RecipeDetailPage() {
 
   return (
     <div>
-      <Link to="/kitchen" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Kitchen</Link>
-      <PageHeader title={recipe.name} />
+      <Link
+        to="/kitchen?tab=Recipes" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}
+        onClick={(e) => { if (pendingIngredient && !window.confirm("An ingredient is selected but not added yet. Leave without saving it?")) e.preventDefault(); }}
+      >← Back to Kitchen</Link>
+      <PageHeader
+        title={recipe.name}
+        action={
+          <div className="flex items-center gap-3">
+            <span className="text-[12px]" style={{ color: pendingIngredient ? "var(--status-warning)" : "var(--ink-400)" }}>
+              {save.isPending ? "Saving..." : pendingIngredient ? "Unsaved ingredient" : savedAt ? `Saved ${savedAt}` : "No unsaved changes"}
+            </span>
+            <Button onClick={saveAll} disabled={save.isPending}>Save</Button>
+          </div>
+        }
+      />
       <div className="flex flex-col gap-4 text-[13px]">
         <div className="flex flex-wrap items-center gap-2">
           <Badge>{recipe.category}</Badge>
@@ -587,37 +620,6 @@ function FoodBatchesModal({ item, onClose }: { item: FoodInventoryItem; onClose:
 
 const OCCASION_TYPES = ["Breakfast", "Lunch", "Dinner", "Special Dinner", "Events"];
 
-// Scales a recipe from its authored yield to the portions actually needed
-// (yield 10, need 50 -> every ingredient x5). Quantities are what Log Meal
-// will draw from stock, i.e. grossed up by each ingredient's yield %.
-function scaleRecipe(recipe: Recipe, portions: number) {
-  const factor = portions / Math.max(1, recipe.cost.portions);
-  return {
-    cost: recipe.cost.total_cost * factor,
-    ingredients: recipe.ingredients.map((i) => ({
-      name: i.name,
-      unit: i.unit,
-      qty: Math.round((i.qty * factor) / ((i.yield_pct || 100) / 100) * 1000) / 1000,
-    })),
-  };
-}
-
-function ScaledIngredients({ recipe, portions }: { recipe: Recipe; portions: number }) {
-  const scaled = scaleRecipe(recipe, portions);
-  return (
-    <div className="mt-1.5 rounded-lg border p-2 text-[12px]" style={{ borderColor: "var(--border)", background: "var(--surface-sunken)" }}>
-      <div className="mb-1 font-semibold">
-        Ingredients for {portions} portion{portions === 1 ? "" : "s"} (recipe yields {recipe.cost.portions}) · KWD {scaled.cost.toFixed(3)}
-      </div>
-      <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
-        {scaled.ingredients.map((i, idx) => (
-          <div key={idx} className="flex justify-between"><span>{i.name}</span><span className="font-medium">{i.qty} {i.unit}</span></div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function ProposalsTab({ modal, setModal }: { modal: boolean; setModal: (v: boolean) => void }) {
   const { data, isLoading } = useList<ProposedMenu>("proposed-menus", "/kitchen/proposed-menus");
   const { data: recipes } = useList<Recipe>("recipes", "/kitchen/recipes");
@@ -682,19 +684,15 @@ function ProposalDetailModal({ proposal, onClose }: { proposal: ProposedMenu; on
           <div className="flex flex-col gap-1.5">
             {proposal.options.map((o, i) => {
               const r = recipe(o.recipe_id);
-              const cost = r ? r.cost.cost_per_portion : null;
               return (
-                <div key={i} className="rounded-lg px-3 py-2" style={{ background: "var(--surface-sunken)" }}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-medium">{r ? r.name : "Recipe not on file"}</span>
-                      <span className="ml-1" style={{ color: "var(--ink-400)" }}>
-                        {o.portions ? `· ${o.portions} portions` : ""}{o.note ? ` — ${o.note}` : ""}{cost != null ? ` · KWD ${cost.toFixed(3)}/portion` : ""}
-                      </span>
-                    </div>
-                    {o.selected && <Badge tone="good">Selected</Badge>}
+                <div key={i} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "var(--surface-sunken)" }}>
+                  <div>
+                    <span className="font-medium">{r ? r.name : "Recipe not on file"}</span>
+                    <span className="ml-1" style={{ color: "var(--ink-400)" }}>
+                      {o.portions ? `· ${o.portions} portions` : ""}{o.note ? ` — ${o.note}` : ""}
+                    </span>
                   </div>
-                  {r && o.portions ? <ScaledIngredients recipe={r} portions={o.portions} /> : null}
+                  {o.selected && <Badge tone="good">Selected</Badge>}
                 </div>
               );
             })}
@@ -797,7 +795,6 @@ function NewProposalModal({ onClose }: { onClose: () => void }) {
                     </label>
                   )}
                 </div>
-                {r.id in portionsByRecipe && <ScaledIngredients recipe={r} portions={portionsByRecipe[r.id]} />}
               </div>
             ))}
           </div>
@@ -843,9 +840,18 @@ function StaffMealPlanTab() {
   });
   const submitPlan = useMutation({
     mutationFn: async (id: string) => api.post(`/kitchen/weekly-meal-plans/${id}/submit`),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["weekly-meal-plans"] });
       qc.invalidateQueries({ queryKey: ["approvals"] });
+      // The submitted week moves to History; clear the entry screen and
+      // point the picker at the following week so the next one can start.
+      const submitted = plans?.find((p) => p.id === id);
+      if (submitted) {
+        const next = new Date(submitted.week_start_date + "T00:00:00");
+        next.setDate(next.getDate() + 7);
+        setNewWeekDate(next.toISOString().slice(0, 10));
+      }
+      setSelectedId(null);
     },
   });
   const deletePlan = useMutation({
@@ -994,7 +1000,7 @@ function PlanHistory({ plans, selectedId, onView }: { plans: WeeklyMealPlan[]; s
 
   return (
     <div className="mt-6">
-      <h3 className="mb-2 text-[13px] font-semibold" style={{ color: "var(--ink-700)" }}>History</h3>
+      <h3 className="mb-2 text-[13px] font-semibold" style={{ color: "var(--ink-700)" }}>Pending approval &amp; history</h3>
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <input className={field} style={border} placeholder="Search reference, creator, approver…" value={search} onChange={(e) => setSearch(e.target.value)} />
         <select className={field} style={border} value={status} onChange={(e) => setStatus(e.target.value)}>

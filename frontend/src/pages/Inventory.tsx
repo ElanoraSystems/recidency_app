@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { api } from "../api/client";
 import { useList, useUpdate } from "../api/hooks";
 import { createDraftRequest } from "./Purchasing";
-import { BalancesTab, LocationBreakdown, MovementsTab } from "../components/StockLedger";
+import { BalancesTab, CostOfSalesTab, LocationBreakdown, MovementsTab } from "../components/StockLedger";
 import { Badge, Button, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th } from "../components/ui";
 import { fmtDate } from "../lib/date";
 import type { CostCenter, FoodInventoryItem, InventoryItem, ItemMasterEntry, ItemMasterTransaction, StockCountDetail, StockCountSummary, Supplier, UnitOfMeasureEntry } from "../types";
@@ -45,7 +45,7 @@ function toStockRows(stock?: InventoryItem[], foodInventory?: FoodInventoryItem[
   return [...general, ...food];
 }
 
-const TABS = ["Stock", "Balances", "Movements", "Item Master", "Stock Count"] as const;
+const TABS = ["Stock", "Balances", "Movements", "Item Master", "Stock Count", "Cost of Sales"] as const;
 const CATEGORIES = [
   "Food", "Dairy", "Meat", "Seafood", "Vegetables", "Frozen", "Bakery", "Dry Goods",
   "Beverages", "Cleaning Chemicals", "Toiletries", "Linen", "Kitchenware",
@@ -84,7 +84,7 @@ export function InventoryPage() {
         action={tab === "Item Master" ? <Button onClick={() => setModal(true)}>+ New Item</Button> : undefined}
       />
 
-      <div className="mb-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
+      {tab !== "Cost of Sales" && <div className="mb-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
         {tab === "Stock" || tab === "Balances" || tab === "Movements" ? (
           <>
             <StatTile label="Total Items" icon="inventory" value={(stock?.length ?? 0) + (foodInventory?.length ?? 0)} />
@@ -104,7 +104,7 @@ export function InventoryPage() {
         ) : (
           <StockCountStats />
         )}
-      </div>
+      </div>}
 
       <div className="mb-5 flex gap-1 rounded-xl p-1" style={{ background: "var(--surface-sunken)", width: "fit-content" }}>
         {TABS.map((t) => (
@@ -129,6 +129,8 @@ export function InventoryPage() {
         <BalancesTab />
       ) : tab === "Movements" ? (
         <MovementsTab />
+      ) : tab === "Cost of Sales" ? (
+        <CostOfSalesTab />
       ) : tab === "Item Master" ? (
         <ItemMasterTab items={itemMaster} stock={stock} foodInventory={foodInventory} />
       ) : (

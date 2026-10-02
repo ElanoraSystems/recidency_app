@@ -13,6 +13,7 @@ from app.models.kitchen import CostCenter, FoodInventory
 from app.models.purchasing import Inventory, ItemMaster, StockCount, StockCountLine
 from app.models.user import User
 from app.services import stock
+from app.services.cos import record_cost_of_sales
 
 router = APIRouter(prefix="/stock-counts", tags=["inventory"])
 inventory_access = require_module("inventory")
@@ -223,6 +224,8 @@ async def submit_stock_count(
 
     count.status = "Submitted"
     count.counted_by = user.id
+    await db.flush()
+    await record_cost_of_sales(db, count.cost_center_id, count.id, count.date)
     await log_activity(db, user, "Submitted stock count", str(count.date))
     await db.commit()
     await db.refresh(count)

@@ -83,3 +83,34 @@ class AuditLog(Base, UUIDPKMixin):
     reason: Mapped[str | None] = mapped_column(String, nullable=True)
     changes: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CostOfSales(Base, UUIDPKMixin):
+    """Month-end cost of sales per cost center, written when a stock count is
+    submitted. COS = opening stock + purchases + transfers in - transfers out
+    - closing stock, all valued at cost from the movement ledger; one row per
+    (cost center, month, stock type) and the latest count of a month replaces
+    the earlier one."""
+
+    __tablename__ = "cost_of_sales"
+    __table_args__ = (UniqueConstraint("cost_center_id", "period", "stock_type", name="uq_cos_period"),)
+
+    cost_center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cost_centers.id", ondelete="CASCADE"))
+    period: Mapped[str] = mapped_column(String(7))  # YYYY-MM
+    stock_type: Mapped[str] = mapped_column(String(10))  # food | general
+    stock_count_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("stock_counts.id", ondelete="SET NULL"), nullable=True
+    )
+    count_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    opening_value: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    purchases: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    transfers_in: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    transfers_out: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    closing_value: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    cost_of_sales: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    # Where the cost went: meals served, waste, and what the count found
+    # missing (negative = surplus). These three sum to cost_of_sales.
+    meals_value: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    waste_value: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    count_variance: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

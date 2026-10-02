@@ -13,7 +13,7 @@ from app.api.deps import _user_allowed_modules, get_current_user
 from app.db.session import get_db
 from app.models.kitchen import CostCenter, FoodInventory
 from app.models.purchasing import Inventory
-from app.models.stock import StockMovement
+from app.models.stock import CostOfSales, StockMovement
 from app.models.user import User
 from app.services import stock
 
@@ -203,3 +203,59 @@ async def reconcile(db: AsyncSession = Depends(get_db), user: User = Depends(get
             mismatches.append(Mismatch(stock_type="general", stock_id=inv.id, name=inv.name, ledger_qty=ledger_qty,
                                        location_qty=loc_qty, rollup_qty=rollup))
     return ReconcileOut(ok=not mismatches, checked=checked, mismatches=mismatches)
+
+
+class CostOfSalesOut(BaseModel):
+    id: uuid.UUID
+    period: str
+    cost_center_id: uuid.UUID
+    cost_center: str
+    stock_type: str
+    stock_count_id: uuid.UUID | None
+    count_date: date
+    opening_value: float
+    purchases: float
+    transfers_in: float
+    transfers_out: float
+    closing_value: float
+    cost_of_sales: float
+    meals_value: float
+    waste_value: float
+    count_variance: float
+
+
+@router.get("/cos", response_model=list[CostOfSalesOut])
+async def cost_of_sales(
+    cost_center_id: uuid.UUID | None = None,
+    stock_type: str | None = None,
+    period_from: str | None = None,
+    period_to: str | None = None,
+    stock_count_id: uuid.UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(stock_view_access),
+):
+    """Monthly cost of sales per cost center, newest month first. Rows are
+    written when a stock count is submitted (see app/services/cos.py)."""
+    stmt = select(CostOfSales).order_by(CostOfSales.period.desc())
+    if cost_center_id:
+        stmt = stmt.where(CostOfSales.cost_center_id == cost_center_id)
+    if stock_type:
+        stmt = stmt.where(CostOfSales.stock_type == stock_type)
+    if period_from:
+        stmt = stmt.where(CostOfSales.period >= period_from)
+    if period_to:
+        stmt = stmt.where(CostOfSales.period <= period_to)
+    if stock_count_id:
+        stmt = stmt.where(CostOfSales.stock_count_id == stock_count_id)
+    rows = (await db.execute(stmt)).scalars().all()
+    labels = {c.id: c.label for c in (await db.execute(select(CostCenter))).scalars().all()}
+    return [
+        CostOfSalesOut(
+            id=r.id, period=r.period, cost_center_id=r.cost_center_id, cost_center=labels.get(r.cost_center_id, "?"),
+            stock_type=r.stock_type, stock_count_id=r.stock_count_id, count_date=r.count_date.date(),
+            opening_value=float(r.opening_value), purchases=float(r.purchases), transfers_in=float(r.transfers_in),
+            transfers_out=float(r.transfers_out), closing_value=float(r.closing_value), cost_of_sales=float(r.cost_of_sales),
+            meals_value=float(r.meals_value), waste_value=float(r.waste_value), count_variance=float(r.count_variance),
+        )
+        for r in rows
+    ]

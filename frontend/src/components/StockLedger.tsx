@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { useList } from "../api/hooks";
 import { fmtDateTime } from "../lib/date";
-import type { CostCenter, StockBalances, StockMovementRow } from "../types";
+import type { CostCenter, CostOfSalesRow, StockBalances, StockMovementRow } from "../types";
 import { Badge, DateRangeFilter, EmptyState, Spinner, Table, Td, Th } from "./ui";
 
 const inputCls = "rounded-lg border px-2.5 py-1.5 text-sm";
@@ -162,6 +162,112 @@ export function LocationBreakdown({ stockId }: { stockId: string }) {
           <span>{c.label}</span><span className="font-medium">{fmtQty(item.by_location[c.id])} {item.unit}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+const monthName = (period: string) =>
+  new Date(period + "-01T00:00:00").toLocaleDateString("en-GB", { month: "short", year: "numeric" });
+const kwd = (n: number) => n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Monthly cost of sales per cost center. A row is written each time a stock
+// count is submitted, so this is the permanent month-by-month history.
+export function CostOfSalesTab() {
+  const { data: costCenters } = useList<CostCenter>("cost-centers", "/kitchen/cost-centers");
+  const [f, setF] = useState({ cc: "", type: "", from: "", to: "" });
+  const set = (k: keyof typeof f) => (v: string) => setF((s) => ({ ...s, [k]: v }));
+  const { data, isLoading } = useQuery<CostOfSalesRow[]>({
+    queryKey: ["cost-of-sales", f],
+    queryFn: async () =>
+      (await api.get("/stock/cos", {
+        params: { cost_center_id: f.cc || undefined, stock_type: f.type || undefined, period_from: f.from || undefined, period_to: f.to || undefined },
+      })).data,
+  });
+  if (isLoading || !data) return <Spinner />;
+
+  const periods = [...new Set(data.map((r) => r.period))].sort().reverse();
+  const centers = [...new Set(data.map((r) => r.cost_center))].sort();
+  const cell = (cc: string, period: string) =>
+    data.filter((r) => r.cost_center === cc && r.period === period).reduce((s, r) => s + r.cost_of_sales, 0);
+  const has = (cc: string, period: string) => data.some((r) => r.cost_center === cc && r.period === period);
+
+  return (
+    <div className="flex flex-col gap-5">
+      <p className="text-[12.5px]" style={{ color: "var(--ink-500)" }}>
+        Cost of sales = opening stock + purchases + transfers in - transfers out - closing stock, valued at cost from the
+        stock ledger. It is calculated and saved for the cost center each time a monthly stock count is submitted (count
+        date sets the month; a later count in the same month replaces the earlier figure).
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <select className={inputCls} style={inputStyle} value={f.cc} onChange={(e) => set("cc")(e.target.value)}>
+          <option value="">All cost centers</option>
+          {costCenters?.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+        <select className={inputCls} style={inputStyle} value={f.type} onChange={(e) => set("type")(e.target.value)}>
+          <option value="">Food &amp; general</option>
+          <option value="food">Food</option>
+          <option value="general">General</option>
+        </select>
+        <label className="flex items-center gap-1.5 text-[12.5px]">From
+          <input type="month" className={inputCls} style={inputStyle} value={f.from} onChange={(e) => set("from")(e.target.value)} />
+        </label>
+        <label className="flex items-center gap-1.5 text-[12.5px]">To
+          <input type="month" className={inputCls} style={inputStyle} value={f.to} onChange={(e) => set("to")(e.target.value)} />
+        </label>
+      </div>
+
+      {data.length === 0 ? (
+        <EmptyState label="No cost of sales recorded yet - it appears here once a monthly stock count is submitted." />
+      ) : (
+        <>
+          <Table>
+            <thead>
+              <tr><Th>Cost center (KWD)</Th>{periods.map((p) => <Th key={p}>{monthName(p)}</Th>)}<Th>Total</Th></tr>
+            </thead>
+            <tbody>
+              {centers.map((cc) => (
+                <tr key={cc}>
+                  <Td className="font-medium">{cc}</Td>
+                  {periods.map((p) => <Td key={p}>{has(cc, p) ? kwd(cell(cc, p)) : "—"}</Td>)}
+                  <Td className="font-semibold">{kwd(periods.reduce((s, p) => s + cell(cc, p), 0))}</Td>
+                </tr>
+              ))}
+              <tr>
+                <Td className="font-semibold">All cost centers</Td>
+                {periods.map((p) => <Td key={p} className="font-semibold">{kwd(centers.reduce((s, cc) => s + cell(cc, p), 0))}</Td>)}
+                <Td className="font-bold">{kwd(data.reduce((s, r) => s + r.cost_of_sales, 0))}</Td>
+              </tr>
+            </tbody>
+          </Table>
+
+          <Table>
+            <thead>
+              <tr>
+                <Th>Month</Th><Th>Cost center</Th><Th>Stock</Th><Th>Opening</Th><Th>Purchases</Th><Th>Transfers in</Th>
+                <Th>Transfers out</Th><Th>Closing</Th><Th>Cost of sales</Th><Th>Meals</Th><Th>Waste</Th><Th>Count variance</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((r) => (
+                <tr key={r.id}>
+                  <Td className="font-medium">{monthName(r.period)}</Td>
+                  <Td>{r.cost_center}</Td>
+                  <Td className="capitalize">{r.stock_type}</Td>
+                  <Td>{kwd(r.opening_value)}</Td>
+                  <Td>{kwd(r.purchases)}</Td>
+                  <Td>{kwd(r.transfers_in)}</Td>
+                  <Td>{kwd(r.transfers_out)}</Td>
+                  <Td>{kwd(r.closing_value)}</Td>
+                  <Td className="font-semibold">{kwd(r.cost_of_sales)}</Td>
+                  <Td>{kwd(r.meals_value)}</Td>
+                  <Td>{kwd(r.waste_value)}</Td>
+                  <Td>{kwd(r.count_variance)}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </>
+      )}
     </div>
   );
 }

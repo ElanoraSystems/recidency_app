@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -444,30 +444,26 @@ export function NewPurchaseOrderPage() {
   const { data: itemMaster } = useList<ItemMasterEntry>("item-master", "/item-master");
   const pr = requests?.find((r) => r.id === prId);
 
-  // Auto-groups the PR's lines by each item's preferred supplier (Odoo's
-  // own behavior for a multi-vendor request) — a line with no linked Item
-  // Master row, or no preferred supplier set, falls into one bucket the
-  // user assigns a supplier to manually.
-  const groups = useMemo(() => {
-    if (!pr) return [];
-    const byKey = new Map<string, PurchaseRequestLine[]>();
-    for (const line of pr.lines) {
-      const im = line.item_master_id ? itemMaster?.find((x) => x.id === line.item_master_id) : undefined;
-      const key = im?.preferred_supplier_id ?? UNASSIGNED;
-      if (!byKey.has(key)) byKey.set(key, []);
-      byKey.get(key)!.push(line);
-    }
-    return [...byKey.entries()].map(([key, lines]) => ({ key, resolvedSupplierId: key === UNASSIGNED ? "" : key, lines }));
-  }, [pr, itemMaster]);
-
-  // groupSupplier only holds a value once the user has actually picked one
-  // (or changed a pre-resolved one) — the effective value for a group that
-  // hasn't been touched yet is derived from its resolved preferred supplier
-  // at read time, not synced into state, so it stays correct across
-  // itemMaster's own load timing instead of racing it.
-  const [groupSupplier, setGroupSupplier] = useState<Record<string, string>>({});
+  // Every line starts with its item's preferred supplier (none for custom
+  // items) and can be changed per line. Lines are then grouped by chosen
+  // supplier: one purchase order per supplier, each linked back to this PR.
+  const [lineSupplier, setLineSupplier] = useState<Record<string, string>>({});
   const [expectedDates, setExpectedDates] = useState<Record<string, string>>({});
   const [prices, setPrices] = useState<Record<string, number>>({});
+  const supplierOf = (l: PurchaseRequestLine): string =>
+    lineSupplier[l.id] ?? (l.item_master_id ? itemMaster?.find((x) => x.id === l.item_master_id)?.preferred_supplier_id : null) ?? "";
+  const supplierLabel = (id: string) => suppliers?.find((s) => s.id === id)?.name ?? "—";
+  const groups = (() => {
+    const byKey = new Map<string, PurchaseRequestLine[]>();
+    for (const line of pr?.lines ?? []) {
+      const key = supplierOf(line) || UNASSIGNED;
+      byKey.set(key, [...(byKey.get(key) ?? []), line]);
+    }
+    return [...byKey.entries()]
+      .map(([key, lines]) => ({ key, supplierId: key === UNASSIGNED ? "" : key, lines }))
+      .sort((x, y) => (x.supplierId ? supplierLabel(x.supplierId) : "\uffff").localeCompare(y.supplierId ? supplierLabel(y.supplierId) : "\uffff"));
+  })();
+  const unassigned = groups.some((g) => !g.supplierId);
 
   // Last three purchases per catalog item (preferring different suppliers).
   const itemIds = [...new Set((pr?.lines ?? []).map((l) => l.item_master_id).filter((x): x is string => !!x))];
@@ -481,15 +477,11 @@ export function NewPurchaseOrderPage() {
   // back to the request's own estimate.
   const priceOf = (l: PurchaseRequestLine) => prices[l.id] ?? historyOf(l)[0]?.unit_price ?? l.est_unit_price;
 
-  function effectiveSupplier(g: { key: string; resolvedSupplierId: string }): string {
-    return groupSupplier[g.key] ?? g.resolvedSupplierId;
-  }
-
   const convert = useMutation({
     mutationFn: async () =>
       api.post(`/purchasing/purchase-requests/${prId}/convert-to-po`, {
         groups: groups.map((g) => ({
-          supplier_id: effectiveSupplier(g),
+          supplier_id: g.supplierId,
           expected_date: expectedDates[g.key] || null,
           lines: g.lines.map((l) => ({ pr_line_id: l.id, price: priceOf(l) })),
         })),
@@ -503,7 +495,7 @@ export function NewPurchaseOrderPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (groups.some((g) => !effectiveSupplier(g))) return;
+    if (unassigned) return;
     await convert.mutateAsync();
   }
 
@@ -519,29 +511,31 @@ export function NewPurchaseOrderPage() {
       <Link to="/purchasing" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Purchasing</Link>
       <PageHeader
         title={`Create purchase order${groups.length > 1 ? "s" : ""} — ${pr.lines.length} item(s)`}
-        subtitle={groups.length > 1 ? `Split into ${groups.length} orders by preferred supplier.` : undefined}
+        subtitle={groups.length > 1 ? `Split into ${groups.length} orders by supplier.` : undefined}
       />
       <form onSubmit={onSubmit} className="flex flex-col gap-4 max-w-3xl">
+        <p className="text-[13px]" style={{ color: "var(--ink-500)" }}>
+          {pr.code}: {pr.lines.length} item{pr.lines.length > 1 ? "s" : ""} → {groups.length} purchase order{groups.length > 1 ? "s" : ""}, one per supplier.
+          Change a line's supplier and it moves to that supplier's order. Every order stays linked to {pr.code}.
+        </p>
         {groups.map((g) => {
           const groupTotal = g.lines.reduce((s, l) => s + priceOf(l) * l.qty, 0);
           return (
-            <div key={g.key} className="flex flex-col gap-3 rounded-xl border p-3" style={{ borderColor: "var(--border-strong)" }}>
-              <div className="flex items-center gap-3">
-                <label className="flex flex-1 flex-col gap-1 text-[13px] font-medium">
-                  {g.resolvedSupplierId ? "Supplier (preferred)" : "Supplier — none preferred, choose one"}
-                  <select required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                    value={effectiveSupplier(g)} onChange={(e) => setGroupSupplier((s) => ({ ...s, [g.key]: e.target.value }))}>
-                    <option value="">— choose a supplier —</option>
-                    {suppliers?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-1 text-[13px] font-medium">Expected delivery
-                  <input type="date" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                    value={expectedDates[g.key] ?? ""} onChange={(e) => setExpectedDates((s) => ({ ...s, [g.key]: e.target.value }))} />
-                </label>
+            <div key={g.key} className="flex flex-col gap-3 rounded-xl border p-3" style={{ borderColor: g.supplierId ? "var(--border-strong)" : "var(--status-warning)" }}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-[14px] font-semibold">
+                  {g.supplierId ? supplierLabel(g.supplierId) : "No supplier yet — choose one for each line"}
+                  <span className="ml-2 text-[12px] font-normal" style={{ color: "var(--ink-400)" }}>{g.lines.length} item(s)</span>
+                </div>
+                {g.supplierId && (
+                  <label className="flex items-center gap-2 text-[12.5px] font-medium">Expected delivery
+                    <input type="date" className="rounded-lg border px-2 py-1 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                      value={expectedDates[g.key] ?? ""} onChange={(e) => setExpectedDates((s) => ({ ...s, [g.key]: e.target.value }))} />
+                  </label>
+                )}
               </div>
               <Table>
-                <thead><tr><Th>Item</Th><Th>Qty</Th><Th>Price/unit (KWD)</Th><Th>Line total</Th></tr></thead>
+                <thead><tr><Th>Item</Th><Th>Qty</Th><Th>Supplier</Th><Th>Price/unit (KWD)</Th><Th>Line total</Th></tr></thead>
                 <tbody>
                   {g.lines.map((l) => (
                     <tr key={l.id}>
@@ -550,6 +544,13 @@ export function NewPurchaseOrderPage() {
                         <PriceHistory entries={historyOf(l)} current={priceOf(l)} />
                       </Td>
                       <Td>{l.qty} {l.unit}</Td>
+                      <Td>
+                        <select required className="w-40 rounded-lg border px-2 py-1 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                          value={supplierOf(l)} onChange={(e) => setLineSupplier((s) => ({ ...s, [l.id]: e.target.value }))}>
+                          <option value="">— choose —</option>
+                          {suppliers?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      </Td>
                       <Td>
                         <input type="number" step="0.001" required
                           className="w-24 rounded-lg border px-2 py-1 text-right text-sm"
@@ -570,7 +571,7 @@ export function NewPurchaseOrderPage() {
           );
         })}
         <div className="text-[13px] font-semibold">Grand total across {groups.length} order{groups.length > 1 ? "s" : ""}: KWD {grandTotal.toFixed(2)}</div>
-        <Button type="submit" disabled={convert.isPending}>
+        <Button type="submit" disabled={convert.isPending || unassigned}>
           {convert.isPending ? "Creating..." : `Create ${groups.length} Purchase Order${groups.length > 1 ? "s" : ""}`}
         </Button>
       </form>

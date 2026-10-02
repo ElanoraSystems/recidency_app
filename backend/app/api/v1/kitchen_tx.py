@@ -299,6 +299,18 @@ async def _unpost_meal_log(db: AsyncSession, meal: MealLog, user: User) -> None:
     await db.execute(delete(ConsumptionLog).where(ConsumptionLog.meal_log_id == meal.id))
 
 
+async def _invoice_context(db: AsyncSession, out) -> dict:
+    """Shared by the meal, transfer and waste invoices: the client's own name
+    in the header and the preparer + sign-offs underneath."""
+    ctx = await _residence_pdf_context(db)
+    ctx["residence"] = {**ctx["residence"], "name": "Hadlaan House"}
+    return {
+        **ctx,
+        "doc_code": out.code,
+        "prepared_by": out.logged_by_name,
+    }
+
+
 @router.get("/meal-log/{meal_id}/invoice-pdf")
 async def meal_log_invoice_pdf(
     meal_id: uuid.UUID, db: AsyncSession = Depends(get_db), _user: User = Depends(kitchen_access)
@@ -310,7 +322,7 @@ async def meal_log_invoice_pdf(
     pdf_bytes = render_pdf(
         "invoice.html",
         {
-            **await _residence_pdf_context(db),
+            **await _invoice_context(db, out),
             "title": out.cost_center,
             "subtitle": f"{out.code} - {out.status}",
             "date": out.date.isoformat(),
@@ -535,7 +547,7 @@ async def stock_transfer_invoice_pdf(
     pdf_bytes = render_pdf(
         "invoice.html",
         {
-            **await _residence_pdf_context(db),
+            **await _invoice_context(db, out),
             "title": f"Raw material transfer {out.code}",
             "subtitle": f"{out.from_cost_center} -> {out.to_cost_center or '-'}",
             "date": out.date.isoformat(),

@@ -2,9 +2,11 @@
 <html>
 <head>
 <meta charset="utf-8">
+<title>{{ residence.name }} - {{ doc_code or 'Invoice' }}</title>
 <style>
   @page { size: A4; margin: 2.2cm 1.8cm 2.6cm 1.8cm;
-    @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 9px; color: #888; } }
+    @bottom-left { content: "© Elanora Systems"; font-size: 9px; color: #888; }
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 9px; color: #888; } }
   body { font-family: "Helvetica Neue", Arial, sans-serif; color: #1f1f1f; font-size: 11px; }
   .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8863b; padding-bottom: 14px; margin-bottom: 18px; }
   .header img { max-height: 56px; max-width: 180px; }
@@ -45,6 +47,7 @@
     <div class="meta-block">
       <p><span class="label">Title</span><br>{{ title }}</p>
       {% if subtitle %}<p><span class="label">Produced for</span><br>{{ subtitle }}</p>{% endif %}
+      {% if prepared_by %}<p><span class="label">Prepared by</span><br>{{ prepared_by }}</p>{% endif %}
     </div>
   </div>
 
