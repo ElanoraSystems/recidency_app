@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -77,10 +77,19 @@ class RecipeIn(BaseModel):
     notes: str | None = None
     prep_loss_pct: float = 0
     raw_yield_g: float = 1000
-    portion_size_g: float = 250
+    # Number of servings, and an optional custom serving weight. With neither
+    # given the legacy 250 g portion applies (seeds and older API clients).
+    portions: int | None = Field(default=None, ge=1)
+    portion_size_g: float | None = Field(default=None, gt=0)
     cooking_method: str | None = None
     method: str | None = None
     ingredients: list[RecipeIngredientIn] = []
+
+    @model_validator(mode="after")
+    def _default_portioning(self):
+        if self.portions is None and self.portion_size_g is None:
+            self.portion_size_g = 250
+        return self
 
 
 class RecipeCost(BaseModel):
@@ -98,7 +107,9 @@ class RecipeOut(BaseModel):
     notes: str | None
     prep_loss_pct: float
     raw_yield_g: float
-    portion_size_g: float
+    portions: int | None
+    portion_size_g: float  # effective: the custom size, else yield / portions
+    portion_size_custom: bool
     cooking_method: str | None
     method: str | None
     cost: RecipeCost
@@ -124,9 +135,12 @@ def compute_recipe_cost(recipe: Recipe, resolved: list[tuple[float, float, float
     total_cost = sum(_ingredient_line_cost(qty, cost_per_unit, yield_pct) for qty, cost_per_unit, yield_pct in resolved)
     raw_yield_g = float(recipe.raw_yield_g or 1000)
     loss_pct = float(recipe.prep_loss_pct or 0)
-    portion_size_g = float(recipe.portion_size_g or 250)
     final_yield_g = round(raw_yield_g * (1 - loss_pct / 100))
-    portions = max(1, round(final_yield_g / portion_size_g)) if portion_size_g else 1
+    if recipe.portions:
+        portions = int(recipe.portions)
+    else:
+        portion_size_g = float(recipe.portion_size_g or 250)
+        portions = max(1, round(final_yield_g / portion_size_g)) if portion_size_g else 1
     return RecipeCost(
         total_cost=round(total_cost, 3),
         final_yield_g=final_yield_g,
@@ -312,7 +326,12 @@ async def _recipe_out(db: AsyncSession, recipe: Recipe) -> RecipeOut:
         notes=recipe.notes,
         prep_loss_pct=float(recipe.prep_loss_pct or 0),
         raw_yield_g=float(recipe.raw_yield_g or 0),
-        portion_size_g=float(recipe.portion_size_g or 0),
+        portions=recipe.portions,
+        portion_size_g=(
+            float(recipe.portion_size_g) if recipe.portion_size_g is not None
+            else round(cost.final_yield_g / max(1, cost.portions))
+        ),
+        portion_size_custom=recipe.portion_size_g is not None,
         cooking_method=recipe.cooking_method,
         method=recipe.method,
         ingredients=ingredient_outs,
@@ -465,6 +484,7 @@ async def create_recipe(
         notes=payload.notes,
         prep_loss_pct=payload.prep_loss_pct,
         raw_yield_g=await _compute_raw_yield_g(db, payload.ingredients),
+        portions=payload.portions,
         portion_size_g=payload.portion_size_g,
         cooking_method=payload.cooking_method,
         method=payload.method,
@@ -491,7 +511,7 @@ async def update_recipe(
         raise HTTPException(404, "Recipe not found")
     await _validate_ingredients(db, payload.ingredients, recipe_id=recipe.id)
     for field in ("name", "category", "allergens", "notes", "prep_loss_pct",
-                  "portion_size_g", "cooking_method", "method"):
+                  "portions", "portion_size_g", "cooking_method", "method"):
         setattr(recipe, field, getattr(payload, field))
     recipe.raw_yield_g = await _compute_raw_yield_g(db, payload.ingredients)
     result = await db.execute(select(RecipeIngredient).where(RecipeIngredient.recipe_id == recipe.id))

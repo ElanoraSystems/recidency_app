@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,9 @@ async def record(
             entity_type=entity_type, entity_id=entity_id, entity_code=entity_code, action=action,
             from_status=from_status, to_status=to_status, user_id=user.id if user else None,
             user_name=user.name if user else None, reason=reason, changes=changes,
+            # Not the DB default: now() is fixed per transaction, so entries written in
+            # one request (create + submit) would tie and list in arbitrary order.
+            created_at=datetime.now(timezone.utc),
         )
     )
 

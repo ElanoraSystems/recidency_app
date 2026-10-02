@@ -17,7 +17,12 @@ class Recipe(Base, UUIDPKMixin, TimestampMixin):
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
     prep_loss_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
     raw_yield_g: Mapped[float] = mapped_column(Numeric(10, 2), default=1000)
-    portion_size_g: Mapped[float] = mapped_column(Numeric(10, 2), default=250)
+    # How many servings the recipe makes. When set it drives the portion
+    # count; otherwise the count is worked out from portion_size_g.
+    portions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # A custom serving weight. Null with `portions` set means "derive it from
+    # the finished yield"; legacy recipes keep a stored size and count by it.
+    portion_size_g: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True, default=None)
     cooking_method: Mapped[str | None] = mapped_column(String(100), nullable=True)
     method: Mapped[str | None] = mapped_column(String, nullable=True)
 

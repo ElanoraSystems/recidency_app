@@ -171,11 +171,15 @@ export function RecipeDetailPage() {
   // than going through recipe state — that state wouldn't be updated yet
   // by the time a same-tick mutate() call reads it.
   const save = useMutation({
-    mutationFn: async (patch: { ingredients: IngredientPayload[]; prep_loss_pct?: number; portion_size_g?: number }) =>
+    mutationFn: async (patch: {
+      ingredients: IngredientPayload[]; prep_loss_pct?: number; portions?: number | null; portion_size_g?: number | null;
+    }) =>
       (await api.patch<Recipe>(`/kitchen/recipes/${recipe!.id}`, {
         name: recipe!.name, category: recipe!.category, allergens: recipe!.allergens, notes: recipe!.notes,
         prep_loss_pct: patch.prep_loss_pct ?? recipe!.prep_loss_pct,
-        portion_size_g: patch.portion_size_g ?? recipe!.portion_size_g,
+        // null size = derive it from yield / portions; only a custom or legacy size is stored.
+        portions: "portions" in patch ? patch.portions : recipe!.portions,
+        portion_size_g: "portion_size_g" in patch ? patch.portion_size_g : (recipe!.portion_size_custom ? recipe!.portion_size_g : null),
         cooking_method: recipe!.cooking_method, method: recipe!.method, ingredients: patch.ingredients,
       })).data,
     // Stays open and refreshes with the saved recipe — closing after every
@@ -240,15 +244,24 @@ export function RecipeDetailPage() {
     setRecipe((r) => (r ? { ...r, prep_loss_pct: pct } : r));
     save.mutate({ ingredients: recipe!.ingredients.map(toPayload), prep_loss_pct: pct });
   }
+  // A custom size is a stated serving weight; with a fixed portion count it
+  // does not change the count (a recipe used as a sub-recipe may be portioned
+  // differently). On a legacy recipe with no fixed count it still sets the count.
   function commitPortionSize(size: number) {
-    setRecipe((r) => (r ? { ...r, portion_size_g: size } : r));
+    if (!size) return;
     save.mutate({ ingredients: recipe!.ingredients.map(toPayload), portion_size_g: size });
   }
+  function useAutoPortionSize() {
+    save.mutate({ ingredients: recipe!.ingredients.map(toPayload), portion_size_g: null });
+  }
   function commitNumberOfPortions(portions: number) {
-    if (!portions || !recipe!.cost.final_yield_g) return;
-    const size = Math.round(recipe!.cost.final_yield_g / portions);
-    setRecipe((r) => (r ? { ...r, portion_size_g: size } : r));
-    save.mutate({ ingredients: recipe!.ingredients.map(toPayload), portion_size_g: size });
+    const n = Math.floor(portions);
+    if (n < 1) return;
+    // A legacy size no longer applies once the count is fixed.
+    save.mutate({
+      ingredients: recipe!.ingredients.map(toPayload), portions: n,
+      ...(recipe!.portions == null ? { portion_size_g: null } : {}),
+    });
   }
   const selectedStock = foodInventory?.find((f) => f.id === ing.food_inventory_id);
   // Mirrors app/services/units.py's family check — only offer an override
@@ -306,11 +319,13 @@ export function RecipeDetailPage() {
           <EditableTile
             label="Portion Size (g)" value={recipe.portion_size_g}
             onCommit={commitPortionSize}
+            sub={recipe.portion_size_custom ? (recipe.portions != null ? "Custom size" : "Sets the number of portions") : "Auto: yield ÷ portions"}
+            action={recipe.portion_size_custom && recipe.portions != null ? { label: "Use auto size", onClick: useAutoPortionSize } : undefined}
           />
           <EditableTile
             label="Number of Portions" value={recipe.cost.portions}
             onCommit={commitNumberOfPortions}
-            sub="Alternate to Portion Size"
+            sub={recipe.portions != null ? "Fixed count" : "Counted from portion size"}
           />
         </div>
 
@@ -446,8 +461,11 @@ export function RecipeDetailPage() {
 // syncs from `value` on every prop change rather than being the source of
 // truth itself.
 function EditableTile({
-  label, value, suffix, sub, onCommit,
-}: { label: string; value: number; suffix?: string; sub?: string; onCommit: (v: number) => void }) {
+  label, value, suffix, sub, onCommit, action,
+}: {
+  label: string; value: number; suffix?: string; sub?: string; onCommit: (v: number) => void;
+  action?: { label: string; onClick: () => void };
+}) {
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
   return (
@@ -465,6 +483,11 @@ function EditableTile({
         {suffix && <span className="text-xs" style={{ color: "var(--ink-400)" }}>{suffix}</span>}
       </div>
       {sub && <span className="text-[11px]" style={{ color: "var(--ink-400)" }}>{sub}</span>}
+      {action && (
+        <button type="button" className="self-start text-[11px] font-semibold" style={{ color: "var(--brass-600)" }} onClick={action.onClick}>
+          {action.label}
+        </button>
+      )}
     </Card>
   );
 }
@@ -475,8 +498,8 @@ export function NewRecipePage() {
   const [form, setForm] = useState({
     name: "", category: "Dinner",
     allergens: "", method: "", notes: "",
-    // Deliberately empty: the chef states the portion, there is no default.
-    portion_size_g: "",
+    // Deliberately empty: the chef states how many portions the recipe makes.
+    portions: "", customSize: false, portion_size_g: "",
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -484,9 +507,11 @@ export function NewRecipePage() {
     e.preventDefault();
     setError(null);
     try {
+      const { customSize, portion_size_g, portions, ...rest } = form;
       const created = await create.mutateAsync({
-        ...form,
-        portion_size_g: Number(form.portion_size_g),
+        ...rest,
+        portions: Number(portions),
+        portion_size_g: customSize ? Number(portion_size_g) : null,
         allergens: form.allergens ? form.allergens.split(",").map((s) => s.trim()).filter(Boolean) : [],
         ingredients: [],
       } as never);
@@ -517,16 +542,34 @@ export function NewRecipePage() {
               value={form.allergens} onChange={(e) => setForm((s) => ({ ...s, allergens: e.target.value }))} />
           </label>
         </div>
-        <label className="flex max-w-xs flex-col gap-1 text-[13px] font-medium">Portion size (g) *
-          <input
-            required type="number" min={1} step="any" placeholder="e.g. 250"
-            className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-            value={form.portion_size_g} onChange={(e) => setForm((s) => ({ ...s, portion_size_g: e.target.value }))}
-          />
-          <span className="text-[11.5px] font-normal" style={{ color: "var(--ink-400)" }}>
-            Weight of one served portion. The number of portions and cost per portion are worked out from this.
-          </span>
-        </label>
+        <div className="flex flex-col gap-2 rounded-xl border p-3" style={{ borderColor: "var(--border-strong)" }}>
+          <label className="flex max-w-xs flex-col gap-1 text-[13px] font-medium">Number of portions *
+            <input
+              required type="number" min={1} step={1} placeholder="e.g. 10"
+              className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+              value={form.portions} onChange={(e) => setForm((s) => ({ ...s, portions: e.target.value }))}
+            />
+            <span className="text-[11.5px] font-normal" style={{ color: "var(--ink-400)" }}>
+              How many servings this recipe makes. Cost per portion and Log Meal scaling are based on this.
+            </span>
+          </label>
+          <label className="flex items-center gap-2 text-[13px] font-medium">
+            <input type="checkbox" checked={form.customSize} onChange={(e) => setForm((s) => ({ ...s, customSize: e.target.checked }))} />
+            Use a custom portion size
+          </label>
+          {form.customSize && (
+            <label className="flex max-w-xs flex-col gap-1 text-[13px] font-medium">Portion size (g) *
+              <input
+                required type="number" min={1} step="any" placeholder="e.g. 150"
+                className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+                value={form.portion_size_g} onChange={(e) => setForm((s) => ({ ...s, portion_size_g: e.target.value }))}
+              />
+              <span className="text-[11.5px] font-normal" style={{ color: "var(--ink-400)" }}>
+                Leave the box unticked to work the portion weight out from the finished yield.
+              </span>
+            </label>
+          )}
+        </div>
         <label className="flex flex-col gap-1 text-[13px] font-medium">Preparation method
           <textarea placeholder="Mise en place & preparation steps" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
             value={form.method} onChange={(e) => setForm((s) => ({ ...s, method: e.target.value }))} />

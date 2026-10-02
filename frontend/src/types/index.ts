@@ -209,7 +209,9 @@ export interface Recipe {
   notes: string | null;
   prep_loss_pct: number;
   raw_yield_g: number;
+  portions: number | null; // fixed serving count; null = counted from the portion size
   portion_size_g: number;
+  portion_size_custom: boolean; // false = derived from yield / portions
   cooking_method: string | null;
   method: string | null;
   ingredients: RecipeIngredient[];
