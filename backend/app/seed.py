@@ -404,19 +404,21 @@ async def seed() -> None:
 
         # -------------------------------------------------- purchase chain --
         pr1 = PurchaseRequest(code="PR-3001", requested_by=staff_users["stf-3"].id, request_date=D(-1),
-                               status="Pending Approval", urgency="High", cost_center="Staff")
+                               status="Submitted", urgency="High", cost_center="Staff",
+                               required_delivery_date=D(5))
         pr2 = PurchaseRequest(code="PR-3002", requested_by=staff_users["stf-8"].id, request_date=D(-2),
-                               status="Pending Approval", urgency="High", cost_center="Guests")
+                               status="Submitted", urgency="High", cost_center="Guests",
+                               required_delivery_date=D(7))
         db.add_all([pr1, pr2])
         await db.flush()
         db.add(PurchaseRequestLine(pr_id=pr1.id, item_master_id=item_master["Toilet Paper (12-pack)"].id,
                                     item_name="Toilet Paper (12-pack)", qty=15, unit="pack",
-                                    category="Toiletries", est_cost=51))
+                                    category="Toiletries", est_unit_price=3.4, est_cost=51))
         db.add(PurchaseRequestLine(pr_id=pr2.id, item_master_id=item_master["Pool Chlorine Tablets"].id,
                                     item_name="Pool Chlorine Tablets", qty=20, unit="kg",
-                                    category="Pool Supplies", est_cost=82))
+                                    category="Pool Supplies", est_unit_price=4.1, est_cost=82))
 
-        po1 = PurchaseOrder(code="PO-1042", supplier_id=sparkle.id, status="Goods Received", order_date=D(-8),
+        po1 = PurchaseOrder(code="PO-1042", supplier_id=sparkle.id, status="Fully Received", order_date=D(-8),
                              expected_date=D(-3), total=72.5, payment_status="Paid")
         db.add(po1)
         await db.flush()
@@ -431,7 +433,7 @@ async def seed() -> None:
         db.add(GrnLine(grn_id=grn1.id, po_line_id=line1.id, name="All-Purpose Cleaner", ordered_qty=20,
                         received_qty=20, unit="bottle", ordered_price=1.9, price=1.9))
 
-        po2 = PurchaseOrder(code="PO-1046", supplier_id=aquacare.id, status="Pending Approval", order_date=D(0),
+        po2 = PurchaseOrder(code="PO-1046", supplier_id=aquacare.id, status="Submitted", order_date=D(0),
                              expected_date=D(4), total=82, payment_status="Unpaid")
         db.add(po2)
         await db.flush()

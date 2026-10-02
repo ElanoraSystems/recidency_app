@@ -5,8 +5,8 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { api } from "../api/client";
 import { useCreate, useList } from "../api/hooks";
 import { Icon } from "../components/icons";
-import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
-import { daysUntil, todayIso } from "../lib/date";
+import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
+import { daysUntil, fmtDate, todayIso } from "../lib/date";
 import { MealLogTab, TransferTab, WasteTab } from "./KitchenTransactions";
 import type { FoodInventoryBatchEntry, FoodInventoryItem, MealCategory, ProposedMenu, Recipe, RecipeIngredient, UnitOfMeasureEntry, WeeklyMealPlan, WeeklyMealPlanEntry } from "../types";
 
@@ -587,6 +587,37 @@ function FoodBatchesModal({ item, onClose }: { item: FoodInventoryItem; onClose:
 
 const OCCASION_TYPES = ["Breakfast", "Lunch", "Dinner", "Special Dinner", "Events"];
 
+// Scales a recipe from its authored yield to the portions actually needed
+// (yield 10, need 50 -> every ingredient x5). Quantities are what Log Meal
+// will draw from stock, i.e. grossed up by each ingredient's yield %.
+function scaleRecipe(recipe: Recipe, portions: number) {
+  const factor = portions / Math.max(1, recipe.cost.portions);
+  return {
+    cost: recipe.cost.total_cost * factor,
+    ingredients: recipe.ingredients.map((i) => ({
+      name: i.name,
+      unit: i.unit,
+      qty: Math.round((i.qty * factor) / ((i.yield_pct || 100) / 100) * 1000) / 1000,
+    })),
+  };
+}
+
+function ScaledIngredients({ recipe, portions }: { recipe: Recipe; portions: number }) {
+  const scaled = scaleRecipe(recipe, portions);
+  return (
+    <div className="mt-1.5 rounded-lg border p-2 text-[12px]" style={{ borderColor: "var(--border)", background: "var(--surface-sunken)" }}>
+      <div className="mb-1 font-semibold">
+        Ingredients for {portions} portion{portions === 1 ? "" : "s"} (recipe yields {recipe.cost.portions}) · KWD {scaled.cost.toFixed(3)}
+      </div>
+      <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+        {scaled.ingredients.map((i, idx) => (
+          <div key={idx} className="flex justify-between"><span>{i.name}</span><span className="font-medium">{i.qty} {i.unit}</span></div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ProposalsTab({ modal, setModal }: { modal: boolean; setModal: (v: boolean) => void }) {
   const { data, isLoading } = useList<ProposedMenu>("proposed-menus", "/kitchen/proposed-menus");
   const { data: recipes } = useList<Recipe>("recipes", "/kitchen/recipes");
@@ -609,7 +640,7 @@ function ProposalsTab({ modal, setModal }: { modal: boolean; setModal: (v: boole
                   {m.options.map((o, i) => (
                     <div key={i} className="flex items-center gap-2 text-[13px]">
                       <span className="h-1.5 w-1.5 rounded-full" style={{ background: o.selected ? "var(--status-good)" : "var(--border-strong)" }} />
-                      {recipeName(o.recipe_id)}
+                      {recipeName(o.recipe_id)}{o.portions ? ` × ${o.portions}` : ""}
                       {o.note && <span style={{ color: "var(--ink-400)" }}>— {o.note}</span>}
                     </div>
                   ))}
@@ -653,14 +684,17 @@ function ProposalDetailModal({ proposal, onClose }: { proposal: ProposedMenu; on
               const r = recipe(o.recipe_id);
               const cost = r ? r.cost.cost_per_portion : null;
               return (
-                <div key={i} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "var(--surface-sunken)" }}>
-                  <div>
-                    <span className="font-medium">{r ? r.name : "Recipe not on file"}</span>
-                    <span className="ml-1" style={{ color: "var(--ink-400)" }}>
-                      {o.note ? `— ${o.note}` : ""}{cost != null ? ` · KWD ${cost.toFixed(3)}/portion` : ""}
-                    </span>
+                <div key={i} className="rounded-lg px-3 py-2" style={{ background: "var(--surface-sunken)" }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-medium">{r ? r.name : "Recipe not on file"}</span>
+                      <span className="ml-1" style={{ color: "var(--ink-400)" }}>
+                        {o.portions ? `· ${o.portions} portions` : ""}{o.note ? ` — ${o.note}` : ""}{cost != null ? ` · KWD ${cost.toFixed(3)}/portion` : ""}
+                      </span>
+                    </div>
+                    {o.selected && <Badge tone="good">Selected</Badge>}
                   </div>
-                  {o.selected && <Badge tone="good">Selected</Badge>}
+                  {r && o.portions ? <ScaledIngredients recipe={r} portions={o.portions} /> : null}
                 </div>
               );
             })}
@@ -690,22 +724,29 @@ function NewProposalModal({ onClose }: { onClose: () => void }) {
   const mealCategories = [...(mealCategoriesRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
   const create = useCreate<ProposedMenu>("proposed-menus", "/kitchen/proposed-menus");
   const [form, setForm] = useState({ occasion: "", occasion_type: "Lunch", for_date: todayIso(), category: "", notes: "" });
-  const [optionIds, setOptionIds] = useState<string[]>([]);
+  // recipe id -> portions needed; a recipe is an option when it has an entry.
+  const [portionsByRecipe, setPortionsByRecipe] = useState<Record<string, number>>({});
   useEffect(() => {
     if (mealCategories.length > 0 && !form.category) {
       setForm((s) => ({ ...s, category: mealCategories[0].label }));
     }
   }, [mealCategories, form.category]);
 
-  function toggleOption(id: string) {
-    setOptionIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  function toggleOption(r: Recipe) {
+    setPortionsByRecipe((s) => {
+      if (r.id in s) {
+        const { [r.id]: _removed, ...rest } = s;
+        return rest;
+      }
+      return { ...s, [r.id]: Math.max(1, r.cost.portions) };
+    });
   }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     await create.mutateAsync({
       ...form,
-      options: optionIds.map((recipe_id) => ({ recipe_id, note: null, selected: false })),
+      options: Object.entries(portionsByRecipe).map(([recipe_id, portions]) => ({ recipe_id, note: null, selected: false, portions })),
     } as never);
     onClose();
   }
@@ -739,10 +780,25 @@ function NewProposalModal({ onClose }: { onClose: () => void }) {
           Recipe options
           <div className="flex flex-col gap-1.5 rounded-lg border p-2" style={{ borderColor: "var(--border-strong)" }}>
             {recipes?.map((r) => (
-              <label key={r.id} className="flex items-center gap-2 text-[13px] font-normal">
-                <input type="checkbox" checked={optionIds.includes(r.id)} onChange={() => toggleOption(r.id)} />
-                {r.name}
-              </label>
+              <div key={r.id}>
+                <div className="flex items-center gap-2 text-[13px] font-normal">
+                  <label className="flex flex-1 items-center gap-2">
+                    <input type="checkbox" checked={r.id in portionsByRecipe} onChange={() => toggleOption(r)} />
+                    {r.name}
+                  </label>
+                  {r.id in portionsByRecipe && (
+                    <label className="flex items-center gap-1.5 text-[12px]">
+                      Portions
+                      <input
+                        type="number" min={1} className="w-20 rounded-lg border px-2 py-1 text-right text-sm" style={{ borderColor: "var(--border-strong)" }}
+                        value={portionsByRecipe[r.id]}
+                        onChange={(e) => setPortionsByRecipe((s) => ({ ...s, [r.id]: Math.max(1, Math.floor(Number(e.target.value) || 1)) }))}
+                      />
+                    </label>
+                  )}
+                </div>
+                {r.id in portionsByRecipe && <ScaledIngredients recipe={r} portions={portionsByRecipe[r.id]} />}
+              </div>
             ))}
           </div>
         </div>
@@ -831,7 +887,7 @@ function StaffMealPlanTab() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {filtered.map((p) => (
+        {filtered.filter((p) => p.status === "Draft").map((p) => (
           <button
             key={p.id}
             onClick={() => setSelectedId(p.id)}
@@ -841,7 +897,7 @@ function StaffMealPlanTab() {
               background: selectedId === p.id ? "var(--brass-50)" : "var(--surface)",
             }}
           >
-            Week of {p.week_start_date} <Badge tone={statusTone(p.status)}>{p.status}</Badge>
+            Draft — week of {p.week_start_date}
           </button>
         ))}
         <div className="flex items-center gap-1.5">
@@ -857,10 +913,14 @@ function StaffMealPlanTab() {
         <>
           <Card className="mb-3 flex flex-wrap items-center justify-between gap-2 !p-3">
             <div>
-              <div className="text-[14px] font-semibold">Week of {selected.week_start_date} — {selected.occasion_type}</div>
-              <div className="mt-1 flex items-center gap-2 text-xs" style={{ color: "var(--ink-500)" }}>
+              <div className="text-[14px] font-semibold">
+                {selected.code && <span className="mr-2" style={{ color: "var(--ink-500)" }}>{selected.code}</span>}
+                Week of {selected.week_start_date} — {selected.occasion_type}
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" style={{ color: "var(--ink-500)" }}>
                 <Badge tone={statusTone(selected.status)}>{selected.status}</Badge>
-                {selected.created_by_name && <span>Started by {selected.created_by_name}</span>}
+                {selected.created_by_name && <span>Created by {selected.created_by_name}</span>}
+                {selected.approved_by_name && <span>· Approved by {selected.approved_by_name}</span>}
               </div>
             </div>
             {selected.status === "Draft" && (
@@ -906,8 +966,66 @@ function StaffMealPlanTab() {
         </>
       )}
 
+      <PlanHistory plans={filtered.filter((p) => p.status !== "Draft")} selectedId={selectedId} onView={setSelectedId} />
+
       {editingCell && selected && (
         <PlanCellModal planId={selected.id} cell={editingCell} recipes={recipes} onClose={() => setEditingCell(null)} />
+      )}
+    </div>
+  );
+}
+
+// Submitted and approved plans leave the working area and live here, so the
+// tab stays one working draft plus one searchable table.
+function PlanHistory({ plans, selectedId, onView }: { plans: WeeklyMealPlan[]; selectedId: string | null; onView: (id: string) => void }) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const q = search.trim().toLowerCase();
+  const rows = plans.filter((p) =>
+    (!status || p.status === status) &&
+    (!dateFrom || p.week_start_date >= dateFrom) &&
+    (!dateTo || p.week_start_date <= dateTo) &&
+    (!q || [p.code, p.occasion_type, p.created_by_name, p.approved_by_name].some((v) => v?.toLowerCase().includes(q)))
+  );
+  const field = "rounded-lg border px-2.5 py-1.5 text-sm";
+  const border = { borderColor: "var(--border-strong)" };
+
+  return (
+    <div className="mt-6">
+      <h3 className="mb-2 text-[13px] font-semibold" style={{ color: "var(--ink-700)" }}>History</h3>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <input className={field} style={border} placeholder="Search reference, creator, approver…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select className={field} style={border} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="">All statuses</option>
+          <option value="Submitted">Submitted</option>
+          <option value="Approved">Approved</option>
+        </select>
+        <DateRangeFilter from={dateFrom} to={dateTo} onFromChange={setDateFrom} onToChange={setDateTo} />
+      </div>
+      {rows.length === 0 ? <EmptyState label="No submitted or approved meal plans match." /> : (
+        <Table>
+          <thead>
+            <tr><Th>Week of</Th><Th>Meal plan ref</Th><Th>Cost center / department</Th><Th>Status</Th><Th>Created by</Th><Th>Approved by</Th><Th>{" "}</Th></tr>
+          </thead>
+          <tbody>
+            {rows.map((p) => (
+              <tr key={p.id} style={selectedId === p.id ? { background: "var(--brass-50)" } : undefined}>
+                <Td>{fmtDate(p.week_start_date)}</Td>
+                <Td className="font-medium">{p.code ?? "—"}</Td>
+                <Td>{p.occasion_type}</Td>
+                <Td><Badge tone={statusTone(p.status)}>{p.status}</Badge></Td>
+                <Td>{p.created_by_name ?? "—"}</Td>
+                <Td>{p.approved_by_name ?? "—"}</Td>
+                <Td>
+                  <button className="text-xs font-semibold" style={{ color: "var(--brass-600)" }}
+                    onClick={() => { onView(p.id); window.scrollTo({ top: 0, behavior: "smooth" }); }}>View</button>
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
       )}
     </div>
   );

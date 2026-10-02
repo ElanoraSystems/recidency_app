@@ -273,17 +273,18 @@ async def receive_batch(db, item: FoodInventory, item_master: ItemMaster, suppli
     pr = PurchaseRequest(
         code=await _next_code(db, PurchaseRequest, "PR", 3001),
         requested_by=actor.id, request_date=D(day), status="Approved", urgency="Medium",
+        required_delivery_date=D(day + 2),
     )
     db.add(pr)
     await db.flush()
     db.add(PurchaseRequestLine(
         pr_id=pr.id, item_master_id=item_master.id, item_name=item.name,
-        qty=qty, unit=item.unit, category=item.category, est_cost=round(qty * price, 2),
+        qty=qty, unit=item.unit, category=item.category, est_unit_price=price, est_cost=round(qty * price, 2),
     ))
 
     po = PurchaseOrder(
         code=await _next_code(db, PurchaseOrder, "PO", 1001),
-        supplier_id=supplier.id, status="Goods Received", order_date=D(day),
+        supplier_id=supplier.id, status="Fully Received", order_date=D(day),
         expected_date=D(day + 2), total=round(qty * price, 2), payment_status="Paid",
         source_pr_id=pr.id, created_by=actor.id, approved_by=actor.id,
     )
@@ -291,7 +292,7 @@ async def receive_batch(db, item: FoodInventory, item_master: ItemMaster, suppli
     # Matches convert_pr_to_po's own status update — otherwise the PR sits
     # at "Approved" forever with a live "Create PO" action, even though a
     # PO already exists for it.
-    pr.status = f"Ordered → {po.code}"
+    pr.status = "Closed"
     await db.flush()
 
     po_line = PoLine(po_id=po.id, item_master_id=item_master.id, name=item.name, qty=qty, unit=item.unit, price=price, received_qty=qty)

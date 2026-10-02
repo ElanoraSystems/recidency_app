@@ -25,14 +25,19 @@ type Action = "submit" | "approve" | "reject" | "close" | "reopen";
 // Query keys that depend on a transaction's posting or status.
 const REFRESH_KEYS = ["approvals", "stock-balances", "stock-movements", "food-inventory", "inventory", "purchase-orders"];
 
+// closeFrom / shortCloseFrom / canReopen let documents without stock effect
+// (a PO closes once Fully Received, and is never reopened) share this bar.
 export function WorkflowBar({
-  entityType, id, status, queryKeys, onChanged,
+  entityType, id, status, queryKeys, onChanged, closeFrom = "Approved", shortCloseFrom = [], canReopen = true,
 }: {
   entityType: string;
   id: string;
-  status: TxnStatus;
+  status: TxnStatus | string;
   queryKeys: string[];
   onChanged?: (status: string) => void;
+  closeFrom?: string;
+  shortCloseFrom?: string[];
+  canReopen?: boolean;
 }) {
   const { user } = useAuth();
   const isSuperUser = user?.user_type === "owner";
@@ -74,18 +79,21 @@ export function WorkflowBar({
           <>
             <Button type="button" onClick={() => go("approve")} disabled={busy}>Approve</Button>
             <Button type="button" variant="danger" onClick={() => go("reject", "Reject and return to Draft", true)} disabled={busy}>Reject</Button>
-            <Button type="button" variant="secondary" onClick={() => go("reopen", "Reopen to edit", false)} disabled={busy}>Reopen</Button>
+            {canReopen && <Button type="button" variant="secondary" onClick={() => go("reopen", "Reopen to edit", false)} disabled={busy}>Reopen</Button>}
           </>
         )}
-        {status === "Approved" && (
+        {status === closeFrom && (
           <>
             <Button type="button" onClick={() => go("close")} disabled={busy}>Close</Button>
-            {isSuperUser && (
+            {isSuperUser && canReopen && (
               <Button type="button" variant="secondary" onClick={() => go("reopen", "Reopen to edit", true)} disabled={busy}>Reopen</Button>
             )}
           </>
         )}
-        {status === "Closed" && (
+        {isSuperUser && shortCloseFrom.includes(status) && (
+          <Button type="button" variant="secondary" onClick={() => go("close", "Close before fully received", true)} disabled={busy}>Close early</Button>
+        )}
+        {status === "Closed" && canReopen && (
           isSuperUser ? (
             <Button type="button" variant="secondary" onClick={() => go("reopen", "Reopen a Closed transaction", true)} disabled={busy}>Reopen</Button>
           ) : (
@@ -93,6 +101,9 @@ export function WorkflowBar({
               Closed - read-only. Only a Super User can reopen it.
             </span>
           )
+        )}
+        {status === "Closed" && !canReopen && (
+          <span className="text-[12.5px]" style={{ color: "var(--ink-500)" }}>Closed - read-only.</span>
         )}
       </div>
       {error && !ask && <p className="mt-2 text-[13px]" style={{ color: "var(--status-critical)" }}>{error}</p>}

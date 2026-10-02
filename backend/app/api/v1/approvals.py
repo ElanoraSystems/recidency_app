@@ -1,12 +1,12 @@
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.api.v1.purchasing import _transition_po_to_ordered
+from app.api.v1.purchasing import decide_po
 from app.api.v1.tasks import _recompute_area_completion, _spawn_next_occurrence
 from app.crud.activity import log_activity
 from app.db.session import get_db
@@ -28,7 +28,7 @@ async def list_approvals(db: AsyncSession = Depends(get_db), user: User = Depend
     out = []
 
     prs = (
-        await db.execute(select(PurchaseRequest).where(PurchaseRequest.status == "Pending Approval"))
+        await db.execute(select(PurchaseRequest).where(PurchaseRequest.status == workflow.SUBMITTED))
     ).scalars().all()
     for pr in prs:
         lines = (
@@ -45,7 +45,7 @@ async def list_approvals(db: AsyncSession = Depends(get_db), user: User = Depend
         )
 
     pos = (
-        await db.execute(select(PurchaseOrder).where(PurchaseOrder.status == "Pending Approval"))
+        await db.execute(select(PurchaseOrder).where(PurchaseOrder.status == workflow.SUBMITTED))
     ).scalars().all()
     for po in pos:
         out.append(
@@ -126,7 +126,7 @@ async def list_approvals(db: AsyncSession = Depends(get_db), user: User = Depend
         )
 
     weekly_plans = (
-        await db.execute(select(WeeklyMealPlan).where(WeeklyMealPlan.status == "Pending Approval"))
+        await db.execute(select(WeeklyMealPlan).where(WeeklyMealPlan.status == workflow.SUBMITTED))
     ).scalars().all()
     for plan in weekly_plans:
         out.append(
@@ -160,11 +160,9 @@ async def list_approvals(db: AsyncSession = Depends(get_db), user: User = Depend
 
 
 DECISION_MODELS = {
-    "purchase_request": (PurchaseRequest, {"approve": "Approved", "reject": "Rejected"}),
-    # purchase_order is deliberately NOT here — see the custom branch in
-    # decide() below, which calls purchasing.py's _transition_po_to_ordered
-    # so this path and purchasing.py's own decision endpoint can't drift
-    # apart (they used to both flip status independently).
+    # purchase_request and purchase_order are deliberately NOT here — they
+    # go through the workflow engine (custom branches in decide() below) so
+    # this path and purchasing.py's own decision endpoints can't drift apart.
     "proposed_menu": (ProposedMenu, {"approve": "Approved", "reject": "Rejected"}),
     "asset": (Asset, {"approve": "Approved", "reject": "Rejected"}),
     "leave_request": (LeaveRequest, {"approve": "Approved", "reject": "Rejected"}),
@@ -174,7 +172,6 @@ DECISION_MODELS = {
 }
 
 STATUS_FIELD = {
-    "purchase_request": "status",
     "proposed_menu": "status",
     "asset": "approval_status",
     "leave_request": "status",
@@ -264,9 +261,20 @@ async def decide(
         po = await db.get(PurchaseOrder, item_id)
         if not po:
             raise HTTPException(404, "Purchase order not found")
-        await _transition_po_to_ordered(db, po, user, approve)
+        await decide_po(db, po, user, approve)
         await db.commit()
         return {"ok": True, "status": po.status}
+
+    if item_type == "purchase_request":
+        pr = await db.get(PurchaseRequest, item_id)
+        if not pr:
+            raise HTTPException(404, "Purchase request not found")
+        new_status = await workflow.apply_action(
+            db, workflow.get_doctype("purchase_request"), pr, "approve" if approve else "reject", user,
+            None if approve else "Rejected from the approvals inbox",
+        )
+        await db.commit()
+        return {"ok": True, "status": new_status}
 
     if item_type == "waste_log":
         waste = await db.get(WasteLog, item_id)
@@ -289,6 +297,11 @@ async def decide(
     obj = await db.get(model, item_id)
     if not obj:
         raise HTTPException(404, "Item not found")
+    if item_type == "weekly_meal_plan":
+        if obj.status != workflow.SUBMITTED:
+            raise HTTPException(400, f"Only a Submitted meal plan can be decided (this is {obj.status})")
+        if approve:
+            obj.approved_by, obj.approved_at = user.id, datetime.now(timezone.utc)
     new_status = statuses["approve"] if approve else statuses["reject"]
     setattr(obj, STATUS_FIELD[item_type], new_status)
     await log_activity(db, user, f"{new_status} {item_type.replace('_', ' ')}", str(item_id))

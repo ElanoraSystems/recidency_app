@@ -1,8 +1,8 @@
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from datetime import date as DateType
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,37 +43,49 @@ class PurchaseRequestLineIn(BaseModel):
     qty: float
     unit: str
     category: str
+    # Unit (or estimated) price; the line cost is always qty x price, never
+    # taken from the client. est_cost is only read from older callers that
+    # still send a line total instead of a unit price.
+    est_unit_price: float | None = None
     est_cost: float = 0
 
 
-class PurchaseRequestLineOut(PurchaseRequestLineIn):
+class PurchaseRequestLineOut(BaseModel):
     id: uuid.UUID
-
-    class Config:
-        from_attributes = True
+    item_master_id: uuid.UUID | None
+    item_name: str
+    qty: float
+    unit: str
+    category: str
+    est_unit_price: float
+    est_cost: float
 
 
 class PurchaseRequestIn(BaseModel):
     urgency: str = "Medium"
     note: str | None = None
     cost_center: str
+    required_delivery_date: date
     lines: list[PurchaseRequestLineIn]
+    # False = save as a Draft that can still be edited before submitting.
+    submit: bool = True
 
 
 class PurchaseRequestOut(BaseModel):
     id: uuid.UUID
     code: str
     request_date: date
+    required_delivery_date: date | None
     status: str
     urgency: str
     requested_by: uuid.UUID | None
+    requested_by_name: str | None
+    approved_by_name: str | None
     note: str | None
     cost_center: str | None
     lines: list[PurchaseRequestLineOut]
     total_est_cost: float
-
-    class Config:
-        from_attributes = True
+    po_codes: list[str]
 
 
 async def _pr_out(db: AsyncSession, pr: PurchaseRequest) -> PurchaseRequestOut:
@@ -81,23 +93,61 @@ async def _pr_out(db: AsyncSession, pr: PurchaseRequest) -> PurchaseRequestOut:
     lines = [
         PurchaseRequestLineOut(
             id=l.id, item_master_id=l.item_master_id, item_name=l.item_name,
-            qty=float(l.qty), unit=l.unit, category=l.category, est_cost=float(l.est_cost),
+            qty=float(l.qty), unit=l.unit, category=l.category,
+            est_unit_price=float(l.est_unit_price), est_cost=float(l.est_cost),
         )
         for l in result.scalars().all()
     ]
+    names = {}
+    ids = {i for i in (pr.requested_by, pr.approved_by) if i}
+    if ids:
+        names = dict((await db.execute(select(User.id, User.name).where(User.id.in_(ids)))).all())
+    po_codes = (
+        await db.execute(select(PurchaseOrder.code).where(PurchaseOrder.source_pr_id == pr.id).order_by(PurchaseOrder.code))
+    ).scalars().all()
     return PurchaseRequestOut(
-        id=pr.id, code=pr.code, request_date=pr.request_date, status=pr.status, urgency=pr.urgency,
-        requested_by=pr.requested_by, note=pr.note, cost_center=pr.cost_center, lines=lines,
-        total_est_cost=round(sum(l.est_cost for l in lines), 2),
+        id=pr.id, code=pr.code, request_date=pr.request_date, required_delivery_date=pr.required_delivery_date,
+        status=pr.status, urgency=pr.urgency, requested_by=pr.requested_by,
+        requested_by_name=names.get(pr.requested_by), approved_by_name=names.get(pr.approved_by),
+        note=pr.note, cost_center=pr.cost_center, lines=lines,
+        total_est_cost=round(sum(l.est_cost for l in lines), 2), po_codes=list(po_codes),
     )
+
+
+def _pr_line_values(line: PurchaseRequestLineIn) -> dict:
+    if line.qty <= 0:
+        raise HTTPException(400, f"Quantity for {line.item_name} must be greater than zero")
+    price = line.est_unit_price
+    if price is None:
+        price = line.est_cost / line.qty
+    if price < 0:
+        raise HTTPException(400, f"Price for {line.item_name} cannot be negative")
+    return {
+        "item_master_id": line.item_master_id, "item_name": line.item_name, "qty": line.qty, "unit": line.unit,
+        "category": line.category, "est_unit_price": round(price, 3), "est_cost": round(line.qty * price, 2),
+    }
+
+
+async def _pr_decide(db: AsyncSession, pr: PurchaseRequest, user: User, action: str, reason: str | None = None) -> str:
+    return await workflow.apply_action(db, workflow.get_doctype("purchase_request"), pr, action, user, reason)
 
 
 @router.get("/purchase-requests", response_model=list[PurchaseRequestOut])
 async def list_purchase_requests(
     db: AsyncSession = Depends(get_db), _user: User = Depends(purchasing_access)
 ):
-    result = await db.execute(select(PurchaseRequest).order_by(PurchaseRequest.request_date.desc()))
+    result = await db.execute(select(PurchaseRequest).order_by(PurchaseRequest.request_date.desc(), PurchaseRequest.code.desc()))
     return [await _pr_out(db, pr) for pr in result.scalars().all()]
+
+
+@router.get("/purchase-requests/{pr_id}", response_model=PurchaseRequestOut)
+async def get_purchase_request(
+    pr_id: uuid.UUID, db: AsyncSession = Depends(get_db), _user: User = Depends(purchasing_access)
+):
+    pr = await db.get(PurchaseRequest, pr_id)
+    if not pr:
+        raise HTTPException(404, "Purchase request not found")
+    return await _pr_out(db, pr)
 
 
 @router.post("/purchase-requests", response_model=PurchaseRequestOut, status_code=201)
@@ -108,34 +158,80 @@ async def create_purchase_request(
 ):
     if not payload.lines:
         raise HTTPException(400, "A purchase request needs at least one line item")
+    values = [_pr_line_values(l) for l in payload.lines]
     pr = PurchaseRequest(
         code=await _next_code(db, PurchaseRequest, "PR", 3001),
-        request_date=date.today(), status="Pending Approval",
+        request_date=date.today(), required_delivery_date=payload.required_delivery_date, status=workflow.DRAFT,
         urgency=payload.urgency, note=payload.note, cost_center=payload.cost_center, requested_by=user.id,
     )
     db.add(pr)
     await db.flush()
-    for line in payload.lines:
-        db.add(PurchaseRequestLine(pr_id=pr.id, **line.model_dump()))
-    await log_activity(db, user, "Submitted purchase request", f"{len(payload.lines)} item(s)")
+    for v in values:
+        db.add(PurchaseRequestLine(pr_id=pr.id, **v))
+    await audit.record(db, user, "purchase_request", pr.id, pr.code, "create", to_status=workflow.DRAFT)
+    if payload.submit:
+        await _pr_decide(db, pr, user, "submit")
     await db.commit()
     await db.refresh(pr)
     return await _pr_out(db, pr)
+
+
+@router.put("/purchase-requests/{pr_id}", response_model=PurchaseRequestOut)
+async def update_purchase_request(
+    pr_id: uuid.UUID,
+    payload: PurchaseRequestIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(purchasing_access),
+):
+    """Only a Draft can be edited; anything else must be reopened first."""
+    pr = await db.get(PurchaseRequest, pr_id)
+    if not pr:
+        raise HTTPException(404, "Purchase request not found")
+    workflow.ensure_editable(pr, user)
+    if not payload.lines:
+        raise HTTPException(400, "A purchase request needs at least one line item")
+    values = [_pr_line_values(l) for l in payload.lines]
+    pr.urgency, pr.note, pr.cost_center = payload.urgency, payload.note, payload.cost_center
+    pr.required_delivery_date = payload.required_delivery_date
+    await db.execute(delete(PurchaseRequestLine).where(PurchaseRequestLine.pr_id == pr.id))
+    for v in values:
+        db.add(PurchaseRequestLine(pr_id=pr.id, **v))
+    await audit.record(db, user, "purchase_request", pr.id, pr.code, "edit", from_status=pr.status, to_status=pr.status)
+    if payload.submit:
+        await _pr_decide(db, pr, user, "submit")
+    await db.commit()
+    await db.refresh(pr)
+    return await _pr_out(db, pr)
+
+
+@router.delete("/purchase-requests/{pr_id}", status_code=204)
+async def delete_purchase_request(
+    pr_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(purchasing_access)
+):
+    pr = await db.get(PurchaseRequest, pr_id)
+    if not pr:
+        raise HTTPException(404, "Purchase request not found")
+    workflow.ensure_editable(pr, user)
+    await db.execute(delete(PurchaseRequestLine).where(PurchaseRequestLine.pr_id == pr.id))
+    await log_activity(db, user, "Deleted draft purchase request", pr.code)
+    await db.delete(pr)
+    await db.commit()
 
 
 @router.post("/purchase-requests/{pr_id}/decision", response_model=PurchaseRequestOut)
 async def decide_purchase_request(
     pr_id: uuid.UUID,
     approve: bool,
+    reason: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(purchasing_access),
 ):
+    """Approve or reject a Submitted request (status-guarded by the workflow
+    engine, so a decided request can't be flipped again)."""
     pr = await db.get(PurchaseRequest, pr_id)
     if not pr:
         raise HTTPException(404, "Purchase request not found")
-    pr.status = "Approved" if approve else "Rejected"
-    line_count = len((await db.execute(select(PurchaseRequestLine).where(PurchaseRequestLine.pr_id == pr_id))).scalars().all())
-    await log_activity(db, user, f"{pr.status} purchase request", f"{line_count} item(s)")
+    await _pr_decide(db, pr, user, "approve" if approve else "reject", None if approve else (reason or "Rejected"))
     await db.commit()
     await db.refresh(pr)
     return await _pr_out(db, pr)
@@ -508,7 +604,7 @@ async def create_purchase_order(
     po = PurchaseOrder(
         code=await _next_code(db, PurchaseOrder, "PO", 1001),
         supplier_id=payload.supplier_id,
-        status="Pending Approval",
+        status=workflow.DRAFT,
         order_date=date.today(),
         expected_date=payload.expected_date,
         total=total,
@@ -521,37 +617,90 @@ async def create_purchase_order(
     for line in payload.lines:
         db.add(PoLine(po_id=po.id, **line.model_dump()))
     await log_activity(db, user, "Created purchase order", f"{po.code} — total {total:.2f}")
+    await audit.record(db, user, "purchase_order", po.id, po.code, "create", to_status=workflow.DRAFT)
+    await workflow.apply_action(db, workflow.get_doctype("purchase_order"), po, "submit", user)
     await db.commit()
     await db.refresh(po)
     return await _po_out(db, po)
 
 
-async def _transition_po_to_ordered(db: AsyncSession, po: PurchaseOrder, user: User, approve: bool) -> None:
+async def decide_po(db: AsyncSession, po: PurchaseOrder, user: User, approve: bool, reason: str | None = None) -> str:
     """The single place a PO's approval decision is applied — called from
     both this module's own decision endpoint AND approvals.py's unified
-    inbox (previously two separate code paths that could each flip status
-    to "Ordered" without the other knowing, so approved_by/PDF generation
-    only had to be wired into one path)."""
-    po.status = "Ordered" if approve else "Rejected"
-    if approve:
-        po.approved_by = user.id
-    await log_activity(db, user, f"{'Approved' if approve else 'Rejected'} purchase order", po.code)
+    inbox, so both go through the same status-guarded workflow."""
+    return await workflow.apply_action(
+        db, workflow.get_doctype("purchase_order"), po, "approve" if approve else "reject", user,
+        None if approve else (reason or "Rejected"),
+    )
 
 
 @router.post("/purchase-orders/{po_id}/decision", response_model=PurchaseOrderOut)
 async def decide_purchase_order(
     po_id: uuid.UUID,
     approve: bool,
+    reason: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(purchasing_access),
 ):
     po = await db.get(PurchaseOrder, po_id)
     if not po:
         raise HTTPException(404, "Purchase order not found")
-    await _transition_po_to_ordered(db, po, user, approve)
+    await decide_po(db, po, user, approve, reason)
     await db.commit()
     await db.refresh(po)
     return await _po_out(db, po)
+
+
+class PriceHistoryEntry(BaseModel):
+    supplier_id: uuid.UUID
+    supplier_name: str
+    date: DateType
+    unit_price: float
+    po_code: str
+
+
+# Orders that actually went to a supplier; drafts and rejected ones say
+# nothing about what was paid.
+PO_PLACED = ("Approved", "Partially Received", "Fully Received", "Closed")
+
+
+@router.get("/price-history", response_model=dict[uuid.UUID, list[PriceHistoryEntry]])
+async def price_history(
+    item_ids: list[uuid.UUID] = Query(default=[]),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(purchasing_access),
+):
+    """Last three purchases per item, preferring different suppliers so the
+    buyer sees a real price comparison; if fewer than three suppliers have
+    sold the item, the gap is filled with the most recent repeat purchases."""
+    if not item_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(PoLine.item_master_id, PoLine.price, PurchaseOrder.order_date, PurchaseOrder.code, Supplier.id, Supplier.name)
+            .join(PurchaseOrder, PurchaseOrder.id == PoLine.po_id)
+            .join(Supplier, Supplier.id == PurchaseOrder.supplier_id)
+            .where(PoLine.item_master_id.in_(item_ids), PurchaseOrder.status.in_(PO_PLACED))
+            .order_by(PurchaseOrder.order_date.desc(), PurchaseOrder.code.desc())
+        )
+    ).all()
+    by_item: dict[uuid.UUID, list[PriceHistoryEntry]] = {}
+    seen: dict[uuid.UUID, set[uuid.UUID]] = {}
+    spare: dict[uuid.UUID, list[PriceHistoryEntry]] = {}
+    for item_id, price, order_date, po_code, supplier_id, supplier_name in rows:
+        entry = PriceHistoryEntry(
+            supplier_id=supplier_id, supplier_name=supplier_name, date=order_date, unit_price=float(price), po_code=po_code
+        )
+        picked = by_item.setdefault(item_id, [])
+        if supplier_id not in seen.setdefault(item_id, set()) and len(picked) < 3:
+            picked.append(entry)
+            seen[item_id].add(supplier_id)
+        else:
+            spare.setdefault(item_id, []).append(entry)
+    for item_id, picked in by_item.items():
+        picked.extend(spare.get(item_id, [])[: 3 - len(picked)])
+        picked.sort(key=lambda e: e.date, reverse=True)
+    return by_item
 
 
 class ConvertPrLineIn(BaseModel):
@@ -584,7 +733,7 @@ async def convert_pr_to_po(
     pr = await db.get(PurchaseRequest, pr_id)
     if not pr:
         raise HTTPException(404, "Purchase request not found")
-    if pr.status != "Approved":
+    if pr.status != workflow.APPROVED:
         raise HTTPException(400, "Only an approved purchase request can be converted to an order")
     if not payload.groups:
         raise HTTPException(400, "At least one supplier group is required")
@@ -607,7 +756,9 @@ async def convert_pr_to_po(
         po = PurchaseOrder(
             code=await _next_code(db, PurchaseOrder, "PO", 1001),
             supplier_id=group.supplier_id,
-            status="Pending Approval" if total > 500 else "Ordered",
+            # Orders above 500 still need their own sign-off; smaller ones
+            # are approved with the request they came from.
+            status=workflow.SUBMITTED if total > 500 else workflow.APPROVED,
             order_date=date.today(),
             expected_date=group.expected_date,
             total=total,
@@ -615,8 +766,12 @@ async def convert_pr_to_po(
             source_pr_id=pr.id,
             created_by=user.id,
         )
+        if po.status == workflow.APPROVED:
+            po.approved_by, po.approved_at = user.id, datetime.now(timezone.utc)
         db.add(po)
         await db.flush()
+        await audit.record(db, user, "purchase_order", po.id, po.code, "create", to_status=po.status,
+                           reason=f"Converted from {pr.code}")
         for g in group.lines:
             line = pr_lines[g.pr_line_id]
             db.add(PoLine(
@@ -626,7 +781,9 @@ async def convert_pr_to_po(
         created_pos.append(po)
         po_codes.append(po.code)
 
-    pr.status = f"Ordered → {', '.join(po_codes)}"
+    pr.status, pr.closed_by, pr.closed_at = workflow.CLOSED, user.id, datetime.now(timezone.utc)
+    await audit.record(db, user, "purchase_request", pr.id, pr.code, "convert", from_status=workflow.APPROVED,
+                       to_status=workflow.CLOSED, reason=f"Ordered as {', '.join(po_codes)}")
     await log_activity(db, user, "Created purchase order(s)", f"{', '.join(po_codes)} from {len(pr_lines)} item(s)")
     await db.commit()
     return [await _po_out(db, po) for po in created_pos]
@@ -700,7 +857,7 @@ class GrnOut(BaseModel):
 
 # A PO can be received against while it is open: freshly ordered, or already
 # partly received. (Phase B renames these to the standard workflow words.)
-PO_RECEIVABLE = ("Ordered", "Partially Received")
+PO_RECEIVABLE = ("Approved", "Partially Received")
 EPS = 0.0005
 
 
@@ -800,12 +957,14 @@ async def _grn_snapshot(db: AsyncSession, grn: Grn) -> dict:
 
 async def _refresh_po_status(db: AsyncSession, po: PurchaseOrder) -> None:
     lines = (await db.execute(select(PoLine).where(PoLine.po_id == po.id))).scalars().all()
+    if po.status == workflow.CLOSED:
+        return  # a Closed PO keeps its status even if a late receipt is reversed
     if all(float(l.received_qty) >= float(l.qty) - EPS for l in lines):
-        po.status = "Goods Received"
+        po.status = "Fully Received"
     elif any(float(l.received_qty) > EPS for l in lines):
         po.status = "Partially Received"
     else:
-        po.status = "Ordered"
+        po.status = workflow.APPROVED
 
 
 @router.get("/grns", response_model=list[GrnOut])
@@ -952,4 +1111,31 @@ async def _unpost_grn(db: AsyncSession, grn: Grn, user: User) -> None:
 
 workflow.register(
     workflow.DocType("grn", "GRN", Grn, "purchasing", _post_grn, _unpost_grn, creator_attr="received_by")
+)
+
+
+async def _no_stock_effect(db: AsyncSession, obj, user: User) -> None:
+    """PRs and POs move no stock; submitting is just the status change."""
+
+
+async def _unpost_pr(db: AsyncSession, pr: PurchaseRequest, user: User) -> None:
+    codes = (await db.execute(select(PurchaseOrder.code).where(PurchaseOrder.source_pr_id == pr.id))).scalars().all()
+    if codes:
+        raise HTTPException(400, f"{pr.code} has already been ordered ({', '.join(codes)}) and cannot be reopened")
+
+
+workflow.register(
+    workflow.DocType(
+        "purchase_request", "Purchase request", PurchaseRequest, "purchasing", _no_stock_effect, _unpost_pr,
+        creator_attr="requested_by", reject_status="Rejected",
+    )
+)
+# A PO closes once Fully Received; the Super User may short-close one that
+# will never be completed. Orders are not edited after approval, so no reopen.
+workflow.register(
+    workflow.DocType(
+        "purchase_order", "Purchase order", PurchaseOrder, "purchasing", _no_stock_effect,
+        creator_attr="created_by", reject_status="Rejected", close_from="Fully Received",
+        short_close_from=("Approved", "Partially Received"), can_reopen=False,
+    )
 )

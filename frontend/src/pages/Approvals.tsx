@@ -210,7 +210,7 @@ function PoDetailModal({ item, decide, onClose }: { item: ApprovalItem; decide: 
             Download PDF
           </Button>
         </div>
-        {order.status === "Pending Approval" && (
+        {order.status === "Submitted" && (
           <div className="flex gap-2">
             <Button onClick={() => decide.mutate({ type: "purchase_order", id: order.id, approve: true })} disabled={decide.isPending}>
               Approve Order

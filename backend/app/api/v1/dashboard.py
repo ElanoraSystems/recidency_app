@@ -50,7 +50,7 @@ async def dashboard_summary(db: AsyncSession = Depends(get_db), _user: User = De
     purch_pending = (
         await db.execute(
             select(func.count()).select_from(PurchaseRequest).where(
-                PurchaseRequest.status == "Pending Approval"
+                PurchaseRequest.status == "Submitted"
             )
         )
     ).scalar_one()

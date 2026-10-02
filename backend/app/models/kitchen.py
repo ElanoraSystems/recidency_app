@@ -1,7 +1,7 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, Date, ForeignKey, Integer, Numeric, String
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -281,11 +281,20 @@ class WeeklyMealPlan(Base, UUIDPKMixin, TimestampMixin):
 
     occasion_type: Mapped[str] = mapped_column(String(60))  # Staff Meals – Office | Staff Meals – Residence
     week_start_date: Mapped[date] = mapped_column(Date)  # the Sunday starting this week
-    status: Mapped[str] = mapped_column(String(20), default="Draft")  # Draft | Pending Approval | Approved
+    status: Mapped[str] = mapped_column(String(20), default="Draft")  # Draft | Submitted | Approved
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    code: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)  # MP-1001
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    submitted_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class WeeklyMealPlanEntry(Base, UUIDPKMixin):
@@ -323,3 +332,5 @@ class MenuOption(Base, UUIDPKMixin):
     recipe_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("recipes.id", ondelete="CASCADE"))
     note: Mapped[str | None] = mapped_column(String(200), nullable=True)
     selected: Mapped[bool] = mapped_column(default=False)
+    # Portions the proposal needs; ingredients scale from the recipe's own yield.
+    portions: Mapped[int | None] = mapped_column(Integer, nullable=True)

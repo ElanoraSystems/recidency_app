@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, model_validator
@@ -24,6 +24,7 @@ from app.models.kitchen import (
 from app.models.purchasing import UnitOfMeasure
 from app.models.user import User
 from app.services import units as unit_conv
+from app.services.codes import next_code
 from app.services.pdf import logo_data_uri, render_pdf
 
 router = APIRouter(prefix="/kitchen", tags=["kitchen"])
@@ -597,11 +598,16 @@ class WeeklyMealPlanEntryOut(BaseModel):
 
 class WeeklyMealPlanOut(BaseModel):
     id: uuid.UUID
+    code: str | None
     occasion_type: str
     week_start_date: date
     status: str
     notes: str | None
     created_by_name: str | None
+    created_at: datetime | None = None
+    submitted_at: datetime | None = None
+    approved_by_name: str | None = None
+    approved_at: datetime | None = None
     entries: list[WeeklyMealPlanEntryOut]
 
 
@@ -610,13 +616,19 @@ async def _plan_out(db: AsyncSession, plan: WeeklyMealPlan) -> WeeklyMealPlanOut
         await db.execute(select(WeeklyMealPlanEntry).where(WeeklyMealPlanEntry.plan_id == plan.id))
     ).scalars().all()
     creator = await db.get(User, plan.created_by) if plan.created_by else None
+    approver = await db.get(User, plan.approved_by) if plan.approved_by else None
     return WeeklyMealPlanOut(
         id=plan.id,
+        code=plan.code,
         occasion_type=plan.occasion_type,
         week_start_date=plan.week_start_date,
         status=plan.status,
         notes=plan.notes,
         created_by_name=creator.name if creator else None,
+        created_at=plan.created_at,
+        submitted_at=plan.submitted_at,
+        approved_by_name=approver.name if approver else None,
+        approved_at=plan.approved_at,
         entries=[WeeklyMealPlanEntryOut.model_validate(e) for e in entries],
     )
 
@@ -634,6 +646,7 @@ async def create_weekly_meal_plan(
     if payload.occasion_type not in OCCASION_TYPES_STAFF:
         raise HTTPException(400, f"Unknown occasion type '{payload.occasion_type}'")
     plan = WeeklyMealPlan(
+        code=await next_code(db, WeeklyMealPlan, "MP", 1001),
         occasion_type=payload.occasion_type,
         week_start_date=payload.week_start_date,
         notes=payload.notes,
@@ -706,7 +719,7 @@ async def submit_weekly_meal_plan(
     ).scalars().all()
     if not count:
         raise HTTPException(400, "Fill in at least one meal before submitting")
-    plan.status = "Pending Approval"
+    plan.status, plan.submitted_by, plan.submitted_at = "Submitted", user.id, datetime.now(timezone.utc)
     await log_activity(db, user, "Submitted weekly meal plan for approval", f"{plan.occasion_type} — week of {plan.week_start_date}")
     await db.commit()
     await db.refresh(plan)
@@ -732,6 +745,8 @@ class MenuOptionIn(BaseModel):
     recipe_id: uuid.UUID
     note: str | None = None
     selected: bool = False
+    # Portions needed; ingredients are scaled to this from the recipe's own yield.
+    portions: int | None = None
 
 
 class ProposedMenuIn(BaseModel):
@@ -763,7 +778,7 @@ async def _menu_out(db: AsyncSession, menu: ProposedMenu) -> ProposedMenuOut:
         status=menu.status,
         created_by_name=creator.name if creator else None,
         options=[
-            MenuOptionIn(recipe_id=o.recipe_id, note=o.note, selected=o.selected) for o in options
+            MenuOptionIn(recipe_id=o.recipe_id, note=o.note, selected=o.selected, portions=o.portions) for o in options
         ],
     )
 

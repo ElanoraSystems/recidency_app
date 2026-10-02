@@ -45,6 +45,7 @@ export default function App() {
         <Route path="inventory/counts/:countId" element={<StockCountEntryPage />} />
         <Route path="purchasing" element={<Purchasing />} />
         <Route path="purchasing/requests/new" element={<NewPurchaseRequestPage />} />
+        <Route path="purchasing/requests/:id/edit" element={<NewPurchaseRequestPage />} />
         <Route path="purchasing/orders/new/:prId" element={<NewPurchaseOrderPage />} />
         <Route path="purchasing/grn/:poId" element={<ReceiveGoodsPage />} />
         <Route path="settings" element={<Settings />} />

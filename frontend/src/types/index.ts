@@ -310,11 +310,16 @@ export interface WeeklyMealPlanEntry {
 
 export interface WeeklyMealPlan {
   id: string;
+  code: string | null;
   occasion_type: string;
   week_start_date: string;
   status: string;
   notes: string | null;
   created_by_name: string | null;
+  created_at: string | null;
+  submitted_at: string | null;
+  approved_by_name: string | null;
+  approved_at: string | null;
   entries: WeeklyMealPlanEntry[];
 }
 
@@ -368,6 +373,7 @@ export interface PurchaseRequestLine {
   qty: number;
   unit: string;
   category: string;
+  est_unit_price: number;
   est_cost: number;
 }
 
@@ -377,11 +383,23 @@ export interface PurchaseRequest {
   status: string;
   urgency: string;
   request_date: string;
+  required_delivery_date: string | null;
   requested_by: string | null;
+  requested_by_name: string | null;
+  approved_by_name: string | null;
   note: string | null;
   cost_center: string | null;
   lines: PurchaseRequestLine[];
   total_est_cost: number;
+  po_codes: string[];
+}
+
+export interface PriceHistoryEntry {
+  supplier_id: string;
+  supplier_name: string;
+  date: string;
+  unit_price: number;
+  po_code: string;
 }
 
 export interface PoLine {
@@ -616,6 +634,7 @@ export interface MenuOption {
   recipe_id: string;
   note: string | null;
   selected: boolean;
+  portions?: number | null;
 }
 
 export interface ProposedMenu {

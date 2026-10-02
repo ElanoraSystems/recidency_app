@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import { useCreate, useList, useUpdate } from "../api/hooks";
+import { useList, useUpdate } from "../api/hooks";
+import { createDraftRequest } from "./Purchasing";
 import { BalancesTab, LocationBreakdown, MovementsTab } from "../components/StockLedger";
 import { Badge, Button, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th } from "../components/ui";
 import { fmtDate } from "../lib/date";
-import type { CostCenter, FoodInventoryItem, InventoryItem, ItemMasterEntry, ItemMasterTransaction, PurchaseRequest, StockCountDetail, StockCountSummary, Supplier, UnitOfMeasureEntry } from "../types";
+import type { CostCenter, FoodInventoryItem, InventoryItem, ItemMasterEntry, ItemMasterTransaction, StockCountDetail, StockCountSummary, Supplier, UnitOfMeasureEntry } from "../types";
 
 // Unified view over general (Inventory) and food (FoodInventory) stock rows
 // for the Stock tab — the two tables have different shapes (stock/qty,
@@ -175,19 +176,23 @@ function StockTab({ stock, foodInventory }: { stock?: InventoryItem[]; foodInven
 
 function StockDetailModal({ item, onClose }: { item: StockRow; onClose: () => void }) {
   const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
-  const createPR = useCreate<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
+  const navigate = useNavigate();
+  const [creating, setCreating] = useState(false);
   const low = item.qty < item.min;
   const supplierName = suppliers?.find((s) => s.id === item.supplier_id)?.name ?? "—";
 
   async function onCreatePR() {
-    await createPR.mutateAsync({
-      urgency: "High", note: null,
-      lines: [{
+    setCreating(true);
+    try {
+      const id = await createDraftRequest([{
         item_master_id: null, item_name: item.name, qty: item.max - item.qty, unit: item.unit,
-        category: item.category, est_cost: Math.round((item.max - item.qty) * item.avgPrice * 100) / 100,
-      }],
-    } as never);
-    onClose();
+        category: item.category, est_unit_price: item.avgPrice,
+      }]);
+      onClose();
+      navigate(`/purchasing/requests/${id}/edit`);
+    } finally {
+      setCreating(false);
+    }
   }
 
   const pricingRows: [string, string][] = item.lastPrice !== null
@@ -209,8 +214,8 @@ function StockDetailModal({ item, onClose }: { item: StockRow; onClose: () => vo
         </div>
         <LocationBreakdown stockId={item.id} />
         {low && (
-          <Button onClick={onCreatePR} disabled={createPR.isPending}>
-            {createPR.isPending ? "Creating..." : "Create Purchase Request"}
+          <Button onClick={onCreatePR} disabled={creating}>
+            {creating ? "Creating..." : "Create Purchase Request"}
           </Button>
         )}
       </div>

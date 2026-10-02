@@ -134,7 +134,7 @@ class StockCountLine(Base, UUIDPKMixin):
     unit_cost: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
 
 
-class PurchaseRequest(Base, UUIDPKMixin, TimestampMixin):
+class PurchaseRequest(Base, UUIDPKMixin, TimestampMixin, WorkflowMixin):
     """Header for a multi-item request — see PurchaseRequestLine for the
     items themselves. One PR, N lines, approved and converted as a unit."""
 
@@ -145,7 +145,11 @@ class PurchaseRequest(Base, UUIDPKMixin, TimestampMixin):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     request_date: Mapped[date] = mapped_column(Date)
-    status: Mapped[str] = mapped_column(String(30), default="Pending Approval")
+    # Draft | Submitted | Approved | Closed (converted to PO) | Rejected (legacy)
+    status: Mapped[str] = mapped_column(String(30), default="Draft")
+    # When the goods are needed; mandatory for every new request (nullable
+    # only so requests created before this field existed stay valid).
+    required_delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     urgency: Mapped[str] = mapped_column(String(20), default="Medium")
     note: Mapped[str | None] = mapped_column(String, nullable=True)
     # Owner-managed list (Settings -> Cost Centers) — which budget the
@@ -168,15 +172,17 @@ class PurchaseRequestLine(Base, UUIDPKMixin):
     qty: Mapped[float] = mapped_column(Numeric(10, 2))
     unit: Mapped[str] = mapped_column(String(20))
     category: Mapped[str] = mapped_column(String(80))
-    est_cost: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    est_unit_price: Mapped[float] = mapped_column(Numeric(10, 3), default=0)
+    est_cost: Mapped[float] = mapped_column(Numeric(10, 2), default=0)  # qty x est_unit_price
 
 
-class PurchaseOrder(Base, UUIDPKMixin, TimestampMixin):
+class PurchaseOrder(Base, UUIDPKMixin, TimestampMixin, WorkflowMixin):
     __tablename__ = "purchase_orders"
 
     code: Mapped[str] = mapped_column(String(20), unique=True)  # PO-1042
     supplier_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("suppliers.id"))
-    status: Mapped[str] = mapped_column(String(30), default="Pending Approval")
+    # Submitted | Approved | Partially Received | Fully Received | Closed | Rejected
+    status: Mapped[str] = mapped_column(String(30), default="Submitted")
     order_date: Mapped[date] = mapped_column(Date)
     expected_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     total: Mapped[float] = mapped_column(Numeric(10, 2), default=0)

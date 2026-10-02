@@ -40,6 +40,14 @@ class DocType:
     post: Hook
     unpost: Hook | None = None
     creator_attr: str = "logged_by"
+    # Documents without stock effect (PR, PO) can differ from the default
+    # lifecycle: a rejection may be terminal instead of returning to Draft,
+    # Close may follow a later status than Approved (a PO closes once Fully
+    # Received), and the Super User may short-close from earlier statuses.
+    reject_status: str | None = None
+    close_from: str = APPROVED
+    short_close_from: tuple[str, ...] = ()
+    can_reopen: bool = True
 
 
 _REGISTRY: dict[str, DocType] = {}
@@ -106,9 +114,12 @@ async def apply_action(
         obj.status, obj.submitted_by, obj.submitted_at = SUBMITTED, user.id, now
 
     elif action in ("approve", "close"):
-        required = SUBMITTED if action == "approve" else APPROVED
-        if before != required:
+        required = SUBMITTED if action == "approve" else doctype.close_from
+        short_close = action == "close" and before in doctype.short_close_from
+        if before != required and not short_close:
             raise HTTPException(400, f"Only a {required} transaction can be {action}d (this is {before})")
+        if short_close and not (is_super_user(user) and reason):
+            raise HTTPException(403, f"Closing a {before} transaction early needs the Super User and a reason")
         if not await is_approver(db, user, obj, doctype):
             raise HTTPException(403, f"Only an approver (owner, manager or the creator's supervisor) can {action}")
         if action == "approve":
@@ -119,6 +130,8 @@ async def apply_action(
     else:  # reject | reopen: both undo the posting and return to Draft
         if before == DRAFT:
             raise HTTPException(400, "This transaction is already a Draft")
+        if action == "reopen" and not doctype.can_reopen:
+            raise HTTPException(400, f"A {doctype.label} cannot be reopened")
         if action == "reject":
             if before != SUBMITTED:
                 raise HTTPException(400, "Only a Submitted transaction can be rejected; use Reopen")
@@ -138,8 +151,11 @@ async def apply_action(
         await stock.reverse_txn(db, obj.id, user)
         if doctype.unpost:
             await doctype.unpost(db, obj, user)
-        obj.status = DRAFT
-        _clear_signoffs(obj)
+        if action == "reject" and doctype.reject_status:
+            obj.status = doctype.reject_status
+        else:
+            obj.status = DRAFT
+            _clear_signoffs(obj)
 
     code = getattr(obj, "code", None)
     await audit.record(

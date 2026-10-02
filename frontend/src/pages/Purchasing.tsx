@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useCreate, useList, useUpdate } from "../api/hooks";
@@ -7,7 +7,7 @@ import { Icon } from "../components/icons";
 import { HistoryPanel, StatusBadge, WorkflowBar, errorText } from "../components/Workflow";
 import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { fmtDate, todayIso } from "../lib/date";
-import type { CostCenter, CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, StaffMember, Supplier, TxnStatus, UnitOfMeasureEntry } from "../types";
+import type { CostCenter, CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, Supplier, TxnStatus, UnitOfMeasureEntry, PriceHistoryEntry } from "../types";
 
 interface GrnLine { id: string; name: string; ordered_qty: number; received_qty: number; unit: string; ordered_price: number; price: number; line_total: number; expiry: string | null; batch_label: string | null }
 interface Grn {
@@ -35,8 +35,8 @@ export function Purchasing() {
   const { data: orders } = useList<PurchaseOrder>("purchase-orders", "/purchasing/purchase-orders");
   const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
 
-  const pending = requests?.filter((r) => r.status === "Pending Approval").length ?? 0;
-  const openOrders = orders?.filter((o) => o.status !== "Goods Received").length ?? 0;
+  const pending = requests?.filter((r) => r.status === "Submitted").length ?? 0;
+  const openOrders = orders?.filter((o) => o.status !== "Fully Received" && o.status !== "Closed" && o.status !== "Rejected").length ?? 0;
   const unpaidTotal = orders?.filter((o) => o.payment_status === "Unpaid").reduce((s, o) => s + o.total, 0) ?? 0;
 
   return (
@@ -44,7 +44,7 @@ export function Purchasing() {
       <PageHeader title="Purchasing" subtitle="Item Master → Request → Approve → Order → Receive (GRN) → Main Inventory." />
 
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatTile label="Pending Approval" icon="purchasing" value={pending} progressColor="var(--status-warning)" />
+        <StatTile label="Awaiting Approval" icon="purchasing" value={pending} progressColor="var(--status-warning)" />
         <StatTile label="Open Orders" icon="clock" value={openOrders} />
         <StatTile label="Unpaid Orders" icon="expenses" value={`KWD ${unpaidTotal.toFixed(0)}`} />
         <StatTile label="Active Suppliers" icon="people" value={suppliers?.length ?? 0} />
@@ -77,29 +77,29 @@ export function Purchasing() {
   );
 }
 
-const PR_STATUS_FILTERS = ["Pending Approval", "Approved", "Rejected", "Ordered"] as const;
-function prStatusBucket(status: string): string {
-  return status.startsWith("Ordered") ? "Ordered" : status;
-}
+const PR_STATUS_FILTERS = ["Draft", "Submitted", "Approved", "Closed", "Rejected"] as const;
 
 function RequestsTab() {
   const { data, isLoading } = useList<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
-  const { data: staff } = useList<StaffMember>("staff", "/people/staff");
   const qc = useQueryClient();
-  const [detail, setDetail] = useState<PurchaseRequest | null>(null);
+  // Keep only the id so the open detail follows refetches (status changes).
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const detail = data?.find((pr) => pr.id === detailId) ?? null;
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const decide = useMutation({
     mutationFn: async ({ id, approve }: { id: string; approve: boolean }) =>
       api.post(`/purchasing/purchase-requests/${id}/decision?approve=${approve}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["purchase-requests"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["purchase-requests"] });
+      qc.invalidateQueries({ queryKey: ["approvals"] });
+    },
   });
-  const requesterName = (userId: string | null) => staff?.find((s) => s.user_id === userId)?.name ?? "—";
   const filtered = data?.filter((pr) =>
     (!dateFrom || pr.request_date >= dateFrom) &&
     (!dateTo || pr.request_date <= dateTo) &&
-    (!statusFilter || prStatusBucket(pr.status) === statusFilter)
+    (!statusFilter || pr.status === statusFilter)
   );
 
   return (
@@ -118,20 +118,26 @@ function RequestsTab() {
 
       {isLoading ? <Spinner /> : !filtered || filtered.length === 0 ? <EmptyState label="No purchase requests match these filters." /> : (
         <Table>
-          <thead><tr><Th>PR #</Th><Th>Requested by</Th><Th>Date</Th><Th>Total amount</Th><Th>Status</Th><Th>Action</Th></tr></thead>
+          <thead><tr><Th>PR #</Th><Th>Requested by</Th><Th>Date</Th><Th>Needed by</Th><Th>Total amount</Th><Th>Status</Th><Th>Action</Th></tr></thead>
           <tbody>
             {filtered.map((pr) => (
-              <tr key={pr.id} className="cursor-pointer" onClick={() => setDetail(pr)}>
+              <tr key={pr.id} className="cursor-pointer" onClick={() => setDetailId(pr.id)}>
                 <Td className="font-medium">
                   {pr.code}
-                  <div className="text-xs" style={{ color: "var(--ink-400)" }}>{pr.lines.length} item(s)</div>
+                  <div className="text-xs" style={{ color: "var(--ink-400)" }}>
+                    {pr.lines.length} item(s){pr.po_codes.length > 0 && ` · ${pr.po_codes.join(", ")}`}
+                  </div>
                 </Td>
-                <Td>{requesterName(pr.requested_by)}</Td>
+                <Td>{pr.requested_by_name ?? "—"}</Td>
                 <Td>{fmtDate(pr.request_date)}</Td>
+                <Td>{pr.required_delivery_date ? fmtDate(pr.required_delivery_date) : "—"}</Td>
                 <Td>KWD {pr.total_est_cost.toFixed(2)}</Td>
-                <Td><Badge tone={statusTone(pr.status)}>{pr.status}</Badge></Td>
+                <Td><StatusBadge status={pr.status} /></Td>
                 <Td onClick={(e) => e.stopPropagation()}>
-                  {pr.status === "Pending Approval" && (
+                  {pr.status === "Draft" && (
+                    <Link to={`/purchasing/requests/${pr.id}/edit`}><Button size="sm" variant="secondary">Edit</Button></Link>
+                  )}
+                  {pr.status === "Submitted" && (
                     <div className="flex gap-2">
                       <Button size="sm" variant="secondary" onClick={() => decide.mutate({ id: pr.id, approve: true })}>Approve</Button>
                       <Button size="sm" variant="danger" onClick={() => decide.mutate({ id: pr.id, approve: false })}>Reject</Button>
@@ -148,183 +154,286 @@ function RequestsTab() {
       )}
 
       {detail && (
-        <Modal title={`${detail.code} — ${detail.lines.length} item(s)`} onClose={() => setDetail(null)}>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <Badge tone={statusTone(detail.urgency)}>{detail.urgency} urgency</Badge>
-            <Badge>{detail.cost_center ?? "No cost center"}</Badge>
-            <Badge tone={statusTone(detail.status)}>{detail.status}</Badge>
+        <Modal title={`${detail.code} — ${detail.lines.length} item(s)`} onClose={() => setDetailId(null)}>
+          <div className="flex flex-col gap-3 text-[13px]">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge status={detail.status} />
+                <Badge tone={statusTone(detail.urgency)}>{detail.urgency} urgency</Badge>
+                <Badge>{detail.cost_center ?? "No cost center"}</Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                {detail.status === "Draft" && (
+                  <Link to={`/purchasing/requests/${detail.id}/edit`}><Button variant="secondary">Edit</Button></Link>
+                )}
+                {detail.status === "Approved" && (
+                  <Link to={`/purchasing/orders/new/${detail.id}`}><Button variant="secondary">Create PO</Button></Link>
+                )}
+              </div>
+            </div>
+            <WorkflowBar entityType="purchase_request" id={detail.id} status={detail.status} queryKeys={["purchase-requests"]} />
+            <div className="grid grid-cols-2 gap-2">
+              <InfoRow label="Requested by" value={detail.requested_by_name ?? "—"} />
+              <InfoRow label="Approved by" value={detail.approved_by_name ?? "—"} />
+              <InfoRow label="Request date" value={fmtDate(detail.request_date)} />
+              <InfoRow label="Required delivery" value={detail.required_delivery_date ? fmtDate(detail.required_delivery_date) : "—"} />
+              {detail.po_codes.length > 0 && <InfoRow label="Purchase orders" value={detail.po_codes.join(", ")} />}
+              <InfoRow label="Total" value={`KWD ${detail.total_est_cost.toFixed(2)}`} />
+            </div>
+            <Table>
+              <thead><tr><Th>Item</Th><Th>Qty</Th><Th>Unit price</Th><Th>Line cost</Th></tr></thead>
+              <tbody>
+                {detail.lines.map((l) => (
+                  <tr key={l.id}>
+                    <Td className="font-medium">{l.item_name}</Td>
+                    <Td>{l.qty} {l.unit}</Td>
+                    <Td>KWD {l.est_unit_price.toFixed(3)}</Td>
+                    <Td>KWD {l.est_cost.toFixed(2)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+            {detail.note && <p style={{ color: "var(--ink-500)" }}>{detail.note}</p>}
+            <div>
+              <div className="mb-1 text-[12px] font-semibold uppercase" style={{ color: "var(--ink-500)" }}>History</div>
+              <HistoryPanel entityType="purchase_request" id={detail.id} />
+            </div>
           </div>
-          <Table>
-            <thead><tr><Th>Item</Th><Th>Qty</Th><Th>Category</Th><Th>Est. cost</Th></tr></thead>
-            <tbody>
-              {detail.lines.map((l) => (
-                <tr key={l.id}>
-                  <Td className="font-medium">{l.item_name}</Td>
-                  <Td>{l.qty} {l.unit}</Td>
-                  <Td>{l.category}</Td>
-                  <Td>KWD {l.est_cost.toFixed(2)}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-          {detail.note && <p className="mt-3 text-[13px]" style={{ color: "var(--ink-500)" }}>{detail.note}</p>}
         </Modal>
       )}
     </div>
   );
 }
 
-interface RequestLine { itemRef: string; item: string; qty: number; unit: string; category: string; est_cost: number }
+interface RequestLine { key: string; itemRef: string; item: string; qty: number; unit: string; category: string; price: number }
+interface RequestForm { urgency: string; costCenter: string; note: string; deliveryDate: string; lines: RequestLine[] }
 
-function newRequestLine(defaultUnit: string): RequestLine {
-  return { itemRef: "", item: "", qty: 1, unit: defaultUnit, category: "", est_cost: 0 };
+const newRequestLine = (): RequestLine =>
+  ({ key: crypto.randomUUID(), itemRef: "", item: "", qty: 1, unit: "", category: "", price: 0 });
+
+const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+
+// Creates a Draft pre-filled from stock shortcuts (basket, low-stock) and
+// opens it in the editor, where the buyer confirms the delivery date.
+export async function createDraftRequest(
+  lines: { item_master_id: string | null; item_name: string; qty: number; unit: string; category: string; est_unit_price: number }[],
+): Promise<string> {
+  const { data } = await api.post<PurchaseRequest>("/purchasing/purchase-requests", {
+    urgency: "Medium", note: null, cost_center: "Main Store", required_delivery_date: inDays(7), submit: false, lines,
+  });
+  return data.id;
 }
 
 export function NewPurchaseRequestPage() {
+  const { id } = useParams<{ id: string }>();
+  const isNew = !id;
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { data: itemMaster } = useList<ItemMasterEntry>("item-master", "/item-master");
   const { data: uomsRaw } = useList<UnitOfMeasureEntry>("units-of-measure", "/units-of-measure");
   const uoms = [...(uomsRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
   const { data: costCentersRaw } = useList<CostCenter>("cost-centers", "/kitchen/cost-centers");
   const costCenters = [...(costCentersRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
-  const create = useCreate<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
-  const [lines, setLines] = useState<RequestLine[]>([newRequestLine("")]);
-  const [urgency, setUrgency] = useState("Medium");
-  const [costCenter, setCostCenter] = useState("");
-  const [note, setNote] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const { data: doc, isLoading } = useQuery<PurchaseRequest>({
+    queryKey: ["purchase-request", id],
+    queryFn: async () => (await api.get(`/purchasing/purchase-requests/${id}`)).data,
+    enabled: !!id,
+  });
+  const [edits, setEdits] = useState<Partial<RequestForm> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (uoms.length === 0) return;
-    setLines((ls) => (ls.every((l) => l.unit) ? ls : ls.map((l) => (l.unit ? l : { ...l, unit: uoms[0].label }))));
-  }, [uoms]);
+  const baseline: RequestForm = doc
+    ? {
+        urgency: doc.urgency, costCenter: doc.cost_center ?? "", note: doc.note ?? "", deliveryDate: doc.required_delivery_date ?? "",
+        lines: doc.lines.map((l) => ({
+          key: l.id, itemRef: l.item_master_id ?? "", item: l.item_name, qty: l.qty, unit: l.unit, category: l.category, price: l.est_unit_price,
+        })),
+      }
+    : { urgency: "Medium", costCenter: "", note: "", deliveryDate: "", lines: [newRequestLine()] };
+  const form: RequestForm = { ...baseline, ...(edits ?? {}) };
+  const patch = (p: Partial<RequestForm>) => setEdits((e) => ({ ...(e ?? {}), ...p }));
+  const unitOf = (l: RequestLine) => l.unit || uoms[0]?.label || "";
+  const updateLine = (key: string, p: Partial<RequestLine>) =>
+    patch({ lines: form.lines.map((l) => (l.key === key ? { ...l, ...p } : l)) });
+  const addLine = () => patch({ lines: [...form.lines, newRequestLine()] });
+  const removeLine = (key: string) => patch({ lines: form.lines.filter((l) => l.key !== key) });
+  const editable = isNew || doc?.status === "Draft";
+  const total = form.lines.reduce((s, l) => s + l.qty * l.price, 0);
 
-  function updateLine(i: number, patch: Partial<RequestLine>) {
-    setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
-  }
-  function onPickItem(i: number, id: string) {
-    const im = itemMaster?.find((x) => x.id === id);
-    updateLine(i, {
-      itemRef: id,
-      ...(im ? { item: im.name, unit: im.uom, category: im.stock_type === "food" ? "Kitchen" : "General", est_cost: im.last_price } : {}),
+  function onPickItem(key: string, itemId: string) {
+    const im = itemMaster?.find((x) => x.id === itemId);
+    updateLine(key, {
+      itemRef: itemId,
+      ...(im ? { item: im.name, unit: im.uom, category: im.stock_type === "food" ? "Kitchen" : "General", price: im.last_price } : {}),
     });
   }
-  function addLine() {
-    setLines((ls) => [...ls, newRequestLine(uoms[0]?.label ?? "")]);
-  }
-  function removeLine(i: number) {
-    setLines((ls) => ls.filter((_, idx) => idx !== i));
+
+  // Enter adds the next item instead of submitting; only the buttons submit.
+  function onKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
+    const el = e.target as HTMLElement;
+    if (e.key !== "Enter" || el.tagName === "BUTTON" || el.tagName === "TEXTAREA") return;
+    e.preventDefault();
+    if (editable && el.closest("tbody")) addLine();
   }
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
+  async function save(submit: boolean) {
+    setError(null);
+    if (!form.deliveryDate) return setError("Choose the required delivery date.");
+    if (!form.costCenter) return setError("Choose a cost center.");
+    if (form.lines.some((l) => !(l.item.trim() && l.qty > 0))) return setError("Every line needs an item and a quantity above zero.");
+    const payload = {
+      urgency: form.urgency, note: form.note || null, cost_center: form.costCenter, required_delivery_date: form.deliveryDate, submit,
+      lines: form.lines.map((l) => ({
+        item_master_id: l.itemRef || null, item_name: l.item, qty: l.qty, unit: unitOf(l), category: l.category || "General", est_unit_price: l.price,
+      })),
+    };
+    setBusy(true);
     try {
-      await create.mutateAsync({
-        urgency, note: note || null, cost_center: costCenter,
-        lines: lines.map((l) => ({
-          item_master_id: l.itemRef || null, item_name: l.item, qty: l.qty,
-          unit: l.unit, category: l.category, est_cost: l.est_cost,
-        })),
-      } as never);
+      if (isNew) await api.post("/purchasing/purchase-requests", payload);
+      else await api.put(`/purchasing/purchase-requests/${id}`, payload);
+      for (const k of ["purchase-requests", "purchase-request", "approvals"]) qc.invalidateQueries({ queryKey: [k] });
       navigate("/purchasing");
-    } finally {
-      setSubmitting(false);
+    } catch (err) {
+      setError(errorText(err));
+      setBusy(false);
     }
   }
 
-  const totalEstCost = lines.reduce((s, l) => s + l.est_cost, 0);
+  if (!isNew && isLoading) return <Spinner />;
+  if (!isNew && !doc) return <EmptyState label="Purchase request not found." />;
+  const border = { borderColor: "var(--border-strong)" };
 
   return (
     <div>
       <Link to="/purchasing" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Purchasing</Link>
-      <PageHeader title="New purchase request" subtitle="Add every item you need — the whole list becomes one request, approved and ordered together." />
-      <form onSubmit={onSubmit} className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-3 max-w-xl rounded-xl border p-3" style={{ borderColor: "var(--border-strong)" }}>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Urgency
-            <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={urgency} onChange={(e) => setUrgency(e.target.value)}>
-              {["Low", "Medium", "High"].map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-[13px] font-medium">Cost center
-            <select required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={costCenter} onChange={(e) => setCostCenter(e.target.value)}>
-              <option value="">— Select a cost center —</option>
-              {costCenters.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
-            </select>
-          </label>
-          <label className="col-span-2 flex flex-col gap-1 text-[13px] font-medium">Note (optional)
-            <input className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={note} onChange={(e) => setNote(e.target.value)} />
-          </label>
+      <PageHeader
+        title={isNew ? "New purchase request" : `${doc?.code} — edit`}
+        subtitle="Add every item you need — the whole list becomes one request, approved and ordered together. Press Enter in a line to add the next item."
+      />
+      {!editable && <p className="mb-3 text-[13px]" style={{ color: "var(--status-critical)" }}>This request is {doc?.status} and can no longer be edited.</p>}
+      <form onSubmit={(e) => e.preventDefault()} onKeyDown={onKeyDown} className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3" style={{ borderColor: "var(--border-strong)", background: "var(--surface)" }}>
+          <span className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--ink-400)" }}>Total PR value</span>
+          <span className="text-xl font-bold">KWD {total.toFixed(2)}</span>
         </div>
+        <fieldset disabled={!editable} className="flex min-w-0 flex-col gap-4">
+          <div className="grid max-w-3xl grid-cols-2 gap-3 rounded-xl border p-3 sm:grid-cols-4" style={border}>
+            <label className="flex flex-col gap-1 text-[13px] font-medium">Required delivery date *
+              <input type="date" required min={todayIso()} className="rounded-lg border px-3 py-2 text-sm" style={border}
+                value={form.deliveryDate} onChange={(e) => patch({ deliveryDate: e.target.value })} />
+            </label>
+            <label className="flex flex-col gap-1 text-[13px] font-medium">Cost center *
+              <select required className="rounded-lg border px-3 py-2 text-sm" style={border}
+                value={form.costCenter} onChange={(e) => patch({ costCenter: e.target.value })}>
+                <option value="">— Select —</option>
+                {costCenters.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-[13px] font-medium">Urgency
+              <select className="rounded-lg border px-3 py-2 text-sm" style={border}
+                value={form.urgency} onChange={(e) => patch({ urgency: e.target.value })}>
+                {["Low", "Medium", "High"].map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-[13px] font-medium">Note (optional)
+              <input className="rounded-lg border px-3 py-2 text-sm" style={border} value={form.note} onChange={(e) => patch({ note: e.target.value })} />
+            </label>
+          </div>
 
-        <div className="overflow-x-auto">
-          <Table>
-            <thead>
-              <tr><Th>Item (from Item Master)</Th><Th>Custom item name</Th><Th>Qty</Th><Th>Unit</Th><Th>Category</Th><Th>Est. cost (KWD)</Th><Th>{" "}</Th></tr>
-            </thead>
-            <tbody>
-              {lines.map((line, i) => (
-                <tr key={i}>
-                  <Td>
-                    <select className="w-40 rounded-lg border px-2 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                      value={line.itemRef} onChange={(e) => onPickItem(i, e.target.value)}>
-                      <option value="">— custom item —</option>
-                      {itemMaster?.filter((im) => im.active).map((im) => <option key={im.id} value={im.id}>{im.name}</option>)}
-                    </select>
-                  </Td>
-                  <Td>
-                    <input required={!line.itemRef} disabled={!!line.itemRef} placeholder="e.g. Coffee Beans"
-                      className="w-40 rounded-lg border px-2 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                      value={line.item} onChange={(e) => updateLine(i, { item: e.target.value })} />
-                  </Td>
-                  <Td>
-                    <input type="number" required className="w-20 rounded-lg border px-2 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                      value={line.qty} onChange={(e) => updateLine(i, { qty: Number(e.target.value) })} />
-                  </Td>
-                  <Td>
-                    <select required className="w-24 rounded-lg border px-2 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                      value={line.unit} onChange={(e) => updateLine(i, { unit: e.target.value })}>
-                      {line.unit && !uoms.some((u) => u.label === line.unit) && <option value={line.unit}>{line.unit}</option>}
-                      {uoms.map((u) => <option key={u.id} value={u.label}>{u.label}</option>)}
-                    </select>
-                  </Td>
-                  <Td>
-                    <input required className="w-28 rounded-lg border px-2 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                      value={line.category} onChange={(e) => updateLine(i, { category: e.target.value })} />
-                  </Td>
-                  <Td>
-                    <input type="number" step="0.01" className="w-24 rounded-lg border px-2 py-1.5 text-right text-sm" style={{ borderColor: "var(--border-strong)" }}
-                      value={line.est_cost} onChange={(e) => updateLine(i, { est_cost: Number(e.target.value) })} />
-                  </Td>
-                  <Td>
-                    {lines.length > 1 && (
-                      <button type="button" className="text-xs font-semibold" style={{ color: "var(--status-critical)" }} onClick={() => removeLine(i)}>
-                        Remove
-                      </button>
-                    )}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <thead>
+                <tr><Th>Item (from Item Master)</Th><Th>Custom item name</Th><Th>Qty</Th><Th>Unit</Th><Th>Unit / est. price (KWD)</Th><Th>Line cost (KWD)</Th><Th>{" "}</Th></tr>
+              </thead>
+              <tbody>
+                {form.lines.map((line) => (
+                  <tr key={line.key}>
+                    <Td>
+                      <select className="w-40 rounded-lg border px-2 py-1.5 text-sm" style={border}
+                        value={line.itemRef} onChange={(e) => onPickItem(line.key, e.target.value)}>
+                        <option value="">— custom item —</option>
+                        {itemMaster?.filter((im) => im.active).map((im) => <option key={im.id} value={im.id}>{im.name}</option>)}
+                      </select>
+                    </Td>
+                    <Td>
+                      <input disabled={!!line.itemRef} placeholder="e.g. Coffee Beans" className="w-40 rounded-lg border px-2 py-1.5 text-sm" style={border}
+                        value={line.item} onChange={(e) => updateLine(line.key, { item: e.target.value })} />
+                    </Td>
+                    <Td>
+                      <input type="number" min={0} step="any" className="w-20 rounded-lg border px-2 py-1.5 text-sm" style={border}
+                        value={line.qty} onChange={(e) => updateLine(line.key, { qty: Number(e.target.value) })} />
+                    </Td>
+                    <Td>
+                      <select className="w-24 rounded-lg border px-2 py-1.5 text-sm" style={border}
+                        value={unitOf(line)} onChange={(e) => updateLine(line.key, { unit: e.target.value })}>
+                        {unitOf(line) && !uoms.some((u) => u.label === unitOf(line)) && <option value={unitOf(line)}>{unitOf(line)}</option>}
+                        {uoms.map((u) => <option key={u.id} value={u.label}>{u.label}</option>)}
+                      </select>
+                    </Td>
+                    <Td>
+                      <input type="number" min={0} step="0.001" className="w-24 rounded-lg border px-2 py-1.5 text-right text-sm" style={border}
+                        value={line.price} onChange={(e) => updateLine(line.key, { price: Number(e.target.value) })} />
+                    </Td>
+                    <Td className="font-semibold">{(line.qty * line.price).toFixed(2)}</Td>
+                    <Td>
+                      {form.lines.length > 1 && (
+                        <button type="button" className="text-xs font-semibold" style={{ color: "var(--status-critical)" }} onClick={() => removeLine(line.key)}>
+                          Remove
+                        </button>
+                      )}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+          <div>
+            <Button type="button" variant="secondary" onClick={addLine}>+ Add another item</Button>
+          </div>
+        </fieldset>
 
-        <div className="flex items-center justify-between max-w-3xl">
-          <Button type="button" variant="secondary" onClick={addLine}>+ Add another item</Button>
-          <span className="text-[13px] font-semibold">Total est. cost: KWD {totalEstCost.toFixed(2)}</span>
-        </div>
-        <Button type="submit" disabled={submitting || !costCenter} className="self-start">
-          {submitting ? "Submitting..." : `Submit Request (${lines.length} item${lines.length > 1 ? "s" : ""})`}
-        </Button>
+        {error && <p className="text-[13px]" style={{ color: "var(--status-critical)" }}>{error}</p>}
+        {editable && (
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" disabled={busy} onClick={() => save(false)}>Save draft</Button>
+            <Button type="button" disabled={busy} onClick={() => save(true)}>
+              {busy ? "Working..." : `Submit request (${form.lines.length} item${form.lines.length > 1 ? "s" : ""})`}
+            </Button>
+          </div>
+        )}
       </form>
     </div>
   );
 }
 
 const UNASSIGNED = "unassigned";
+
+// "Last 3 purchases" comparison under a PO line: supplier, date and unit
+// price, with the cheapest marked and the difference against today's price.
+function PriceHistory({ entries, current }: { entries: PriceHistoryEntry[]; current: number }) {
+  if (entries.length === 0) {
+    return <div className="text-[11.5px] font-normal" style={{ color: "var(--ink-400)" }}>No previous purchases</div>;
+  }
+  const lowest = Math.min(...entries.map((e) => e.unit_price));
+  return (
+    <div className="mt-1 flex flex-col gap-0.5 text-[11.5px] font-normal" style={{ color: "var(--ink-500)" }}>
+      <div className="font-semibold uppercase tracking-wide" style={{ color: "var(--ink-400)" }}>Last {entries.length} purchase{entries.length > 1 ? "s" : ""}</div>
+      {entries.map((e, i) => {
+        const diff = current - e.unit_price;
+        return (
+          <div key={`${e.po_code}-${i}`}>
+            {e.supplier_name} · {fmtDate(e.date)} · <b>KWD {e.unit_price.toFixed(3)}</b>
+            {e.unit_price === lowest && entries.length > 1 && <span style={{ color: "var(--status-good)" }}> · lowest</span>}
+            {Math.abs(diff) > 0.0005 && (
+              <span style={{ color: diff > 0 ? "var(--status-critical)" : "var(--status-good)" }}> ({diff > 0 ? "+" : ""}{diff.toFixed(3)} now)</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function NewPurchaseOrderPage() {
   const { prId } = useParams<{ prId: string }>();
@@ -360,14 +469,17 @@ export function NewPurchaseOrderPage() {
   const [expectedDates, setExpectedDates] = useState<Record<string, string>>({});
   const [prices, setPrices] = useState<Record<string, number>>({});
 
-  useEffect(() => {
-    if (!pr) return;
-    setPrices((s) => {
-      const next = { ...s };
-      for (const line of pr.lines) if (next[line.id] === undefined) next[line.id] = line.qty ? line.est_cost / line.qty : 0;
-      return next;
-    });
-  }, [pr]);
+  // Last three purchases per catalog item (preferring different suppliers).
+  const itemIds = [...new Set((pr?.lines ?? []).map((l) => l.item_master_id).filter((x): x is string => !!x))];
+  const { data: history } = useQuery<Record<string, PriceHistoryEntry[]>>({
+    queryKey: ["price-history", itemIds],
+    queryFn: async () => (await api.get("/purchasing/price-history", { params: { item_ids: itemIds }, paramsSerializer: { indexes: null } })).data,
+    enabled: itemIds.length > 0,
+  });
+  const historyOf = (l: PurchaseRequestLine) => (l.item_master_id ? history?.[l.item_master_id] ?? [] : []);
+  // Until edited, a line's price is the most recent purchase price, falling
+  // back to the request's own estimate.
+  const priceOf = (l: PurchaseRequestLine) => prices[l.id] ?? historyOf(l)[0]?.unit_price ?? l.est_unit_price;
 
   function effectiveSupplier(g: { key: string; resolvedSupplierId: string }): string {
     return groupSupplier[g.key] ?? g.resolvedSupplierId;
@@ -379,7 +491,7 @@ export function NewPurchaseOrderPage() {
         groups: groups.map((g) => ({
           supplier_id: effectiveSupplier(g),
           expected_date: expectedDates[g.key] || null,
-          lines: g.lines.map((l) => ({ pr_line_id: l.id, price: prices[l.id] ?? 0 })),
+          lines: g.lines.map((l) => ({ pr_line_id: l.id, price: priceOf(l) })),
         })),
       }),
     onSuccess: () => {
@@ -399,7 +511,7 @@ export function NewPurchaseOrderPage() {
   if (!pr) return <EmptyState label="Purchase request not found." />;
 
   const grandTotal = groups.reduce(
-    (s, g) => s + g.lines.reduce((gs, l) => gs + (prices[l.id] ?? 0) * l.qty, 0), 0,
+    (s, g) => s + g.lines.reduce((gs, l) => gs + priceOf(l) * l.qty, 0), 0,
   );
 
   return (
@@ -411,7 +523,7 @@ export function NewPurchaseOrderPage() {
       />
       <form onSubmit={onSubmit} className="flex flex-col gap-4 max-w-3xl">
         {groups.map((g) => {
-          const groupTotal = g.lines.reduce((s, l) => s + (prices[l.id] ?? 0) * l.qty, 0);
+          const groupTotal = g.lines.reduce((s, l) => s + priceOf(l) * l.qty, 0);
           return (
             <div key={g.key} className="flex flex-col gap-3 rounded-xl border p-3" style={{ borderColor: "var(--border-strong)" }}>
               <div className="flex items-center gap-3">
@@ -433,17 +545,20 @@ export function NewPurchaseOrderPage() {
                 <tbody>
                   {g.lines.map((l) => (
                     <tr key={l.id}>
-                      <Td className="font-medium">{l.item_name}</Td>
+                      <Td className="font-medium">
+                        {l.item_name}
+                        <PriceHistory entries={historyOf(l)} current={priceOf(l)} />
+                      </Td>
                       <Td>{l.qty} {l.unit}</Td>
                       <Td>
                         <input type="number" step="0.001" required
                           className="w-24 rounded-lg border px-2 py-1 text-right text-sm"
                           style={{ borderColor: "var(--border-strong)" }}
-                          value={prices[l.id] ?? 0}
+                          value={priceOf(l)}
                           onChange={(e) => setPrices((s) => ({ ...s, [l.id]: Number(e.target.value) }))}
                         />
                       </Td>
-                      <Td>KWD {((prices[l.id] ?? 0) * l.qty).toFixed(2)}</Td>
+                      <Td>KWD {(priceOf(l) * l.qty).toFixed(2)}</Td>
                     </tr>
                   ))}
                 </tbody>
@@ -466,8 +581,11 @@ export function NewPurchaseOrderPage() {
 function OrdersTab() {
   const { data, isLoading } = useList<PurchaseOrder>("purchase-orders", "/purchasing/purchase-orders");
   const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
+  const { data: grns } = useList<Grn>("grns", "/purchasing/grns");
   const qc = useQueryClient();
-  const [detail, setDetail] = useState<PurchaseOrder | null>(null);
+  // Keep only the id so the open detail follows refetches (status changes).
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const detail = data?.find((po) => po.id === detailId) ?? null;
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -475,7 +593,10 @@ function OrdersTab() {
   const decide = useMutation({
     mutationFn: async ({ id, approve }: { id: string; approve: boolean }) =>
       api.post(`/purchasing/purchase-orders/${id}/decision?approve=${approve}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); setDetail(null); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["purchase-orders"] });
+      qc.invalidateQueries({ queryKey: ["approvals"] });
+    },
   });
 
   const supplierName = (id: string) => suppliers?.find((s) => s.id === id)?.name ?? "—";
@@ -522,23 +643,23 @@ function OrdersTab() {
             const recv = po.lines.reduce((s, l) => s + l.received_qty, 0);
             const ord = po.lines.reduce((s, l) => s + l.qty, 0);
             return (
-              <tr key={po.id} className="cursor-pointer" onClick={() => setDetail(po)}>
+              <tr key={po.id} className="cursor-pointer" onClick={() => setDetailId(po.id)}>
                 <Td className="font-medium">{po.code}</Td>
                 <Td>{supplierName(po.supplier_id)}</Td>
                 <Td className="text-xs" style={{ color: "var(--ink-500)" }}>{po.lines.length} item(s) · {recv}/{ord} recv.</Td>
                 <Td>{fmtDate(po.order_date)}</Td>
                 <Td>{po.expected_date ? fmtDate(po.expected_date) : "—"}</Td>
                 <Td>KWD {po.total.toFixed(2)}</Td>
-                <Td><Badge tone={statusTone(po.status)}>{po.status}</Badge></Td>
+                <Td><StatusBadge status={po.status} /></Td>
                 <Td><Badge tone={statusTone(po.payment_status)}>{po.payment_status}</Badge></Td>
                 <Td onClick={(e) => e.stopPropagation()}>
-                  {po.status === "Pending Approval" && (
+                  {po.status === "Submitted" && (
                     <div className="flex gap-2">
                       <Button size="sm" variant="secondary" onClick={() => decide.mutate({ id: po.id, approve: true })}>Approve</Button>
                       <Button size="sm" variant="danger" onClick={() => decide.mutate({ id: po.id, approve: false })}>Reject</Button>
                     </div>
                   )}
-                  {(po.status === "Ordered" || po.status === "Partially Received") && (
+                  {(po.status === "Approved" || po.status === "Partially Received") && (
                     <Link to={`/purchasing/grn/${po.id}`}><Button size="sm" variant="secondary">Receive</Button></Link>
                   )}
                 </Td>
@@ -550,27 +671,50 @@ function OrdersTab() {
       )}
 
       {detail && (
-        <Modal title={detail.code} onClose={() => setDetail(null)}>
+        <Modal title={detail.code} onClose={() => setDetailId(null)}>
           <div className="flex flex-col gap-3 text-[13px]">
             <div className="flex flex-wrap items-center gap-2">
               <Badge>{supplierName(detail.supplier_id)}</Badge>
-              <Badge tone={statusTone(detail.status)}>{detail.status}</Badge>
+              <StatusBadge status={detail.status} />
               <Badge tone={statusTone(detail.payment_status)}>{detail.payment_status}</Badge>
             </div>
+            <WorkflowBar
+              entityType="purchase_order" id={detail.id} status={detail.status} queryKeys={["purchase-orders"]}
+              closeFrom="Fully Received" shortCloseFrom={["Approved", "Partially Received"]} canReopen={false}
+            />
             <Table>
-              <thead><tr><Th>Item</Th><Th>Ordered</Th><Th>Received</Th><Th>Pending</Th><Th>Price</Th></tr></thead>
+              <thead><tr><Th>Item</Th><Th>Ordered</Th><Th>Received</Th><Th>Remaining</Th><Th>Receipt status</Th><Th>Price</Th></tr></thead>
               <tbody>
-                {detail.lines.map((l) => (
-                  <tr key={l.id}>
-                    <Td className="font-medium">{l.name}</Td>
-                    <Td>{l.qty} {l.unit}</Td>
-                    <Td>{l.received_qty} {l.unit}</Td>
-                    <Td>{l.qty - l.received_qty} {l.unit}</Td>
-                    <Td>KWD {l.price.toFixed(3)}</Td>
-                  </tr>
-                ))}
+                {detail.lines.map((l) => {
+                  const remaining = l.qty - l.received_qty;
+                  const receipt = l.received_qty <= 0 ? "Not Received" : remaining > 0.0005 ? "Partially Received" : "Fully Received";
+                  return (
+                    <tr key={l.id}>
+                      <Td className="font-medium">{l.name}</Td>
+                      <Td>{l.qty} {l.unit}</Td>
+                      <Td>{l.received_qty} {l.unit}</Td>
+                      <Td>{Math.max(0, remaining)} {l.unit}</Td>
+                      <Td><StatusBadge status={receipt} /></Td>
+                      <Td>KWD {l.price.toFixed(3)}</Td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </Table>
+            {(() => {
+              const mine = (grns ?? []).filter((g) => g.po_id === detail.id);
+              return mine.length === 0 ? null : (
+                <div>
+                  <div className="mb-1 text-[12px] font-semibold uppercase" style={{ color: "var(--ink-500)" }}>Goods receipts</div>
+                  {mine.map((g) => (
+                    <div key={g.id} className="flex items-center justify-between py-0.5">
+                      <span>{g.code} · {fmtDate(g.date)} · {g.receiving_cost_center}</span>
+                      <StatusBadge status={g.status} />
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-2 gap-2">
               <InfoRow label="Order date" value={fmtDate(detail.order_date)} />
               <InfoRow label="Expected" value={detail.expected_date ? fmtDate(detail.expected_date) : "—"} />
@@ -579,12 +723,13 @@ function OrdersTab() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={() => downloadPoPdf(detail)}>Download PDF</Button>
-              {detail.status === "Pending Approval" && (
-                <Button onClick={() => decide.mutate({ id: detail.id, approve: true })} disabled={decide.isPending}>Approve Order</Button>
-              )}
-              {(detail.status === "Ordered" || detail.status === "Partially Received") && (
+              {(detail.status === "Approved" || detail.status === "Partially Received") && (
                 <Link to={`/purchasing/grn/${detail.id}`}><Button>Receive Goods (GRN)</Button></Link>
               )}
+            </div>
+            <div>
+              <div className="mb-1 text-[12px] font-semibold uppercase" style={{ color: "var(--ink-500)" }}>History</div>
+              <HistoryPanel entityType="purchase_order" id={detail.id} />
             </div>
           </div>
         </Modal>
@@ -877,7 +1022,8 @@ function ShoppingBasketTab() {
   const { data: foodInventory } = useList<FoodInventoryItem>("food-inventory", "/kitchen/food-inventory");
   const { data: inventory } = useList<InventoryItem>("inventory", "/inventory");
   const [basket, setBasket] = useState<BasketLine[]>([]);
-  const create = useCreate<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
+  const qc = useQueryClient();
+  const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
 
   // Par level (min/max) and current qty both live on whichever stock table
@@ -921,14 +1067,13 @@ function ShoppingBasketTab() {
   async function submitBasket() {
     setSubmitting(true);
     try {
-      await create.mutateAsync({
-        urgency: "Medium", note: null,
-        lines: basket.map((line) => ({
-          item_master_id: line.itemMasterId, item_name: line.name, qty: line.qty,
-          unit: line.unit, category: line.category, est_cost: line.estCost,
-        })),
-      } as never);
+      const id = await createDraftRequest(basket.map((line) => ({
+        item_master_id: line.itemMasterId, item_name: line.name, qty: line.qty, unit: line.unit, category: line.category,
+        est_unit_price: line.qty ? line.estCost / line.qty : 0,
+      })));
       setBasket([]);
+      qc.invalidateQueries({ queryKey: ["purchase-requests"] });
+      navigate(`/purchasing/requests/${id}/edit`);
     } finally {
       setSubmitting(false);
     }
@@ -976,7 +1121,7 @@ function ShoppingBasketTab() {
                 </div>
               ))}
               <Button onClick={submitBasket} disabled={submitting}>
-                {submitting ? "Submitting..." : `Submit ${basket.length} request${basket.length > 1 ? "s" : ""}`}
+                {submitting ? "Creating..." : "Create purchase request"}
               </Button>
             </div>
           </Card>
