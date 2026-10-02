@@ -6,7 +6,7 @@ import { useCreate, useList, useUpdate } from "../api/hooks";
 import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { CATEGORIES as DOC_CATEGORIES, DocumentFilesModal, NewDocumentModal } from "./Documents";
 import { NewTaskModal } from "./Tasks";
-import { todayIso } from "../lib/date";
+import { timeHm, todayIso } from "../lib/date";
 import type { DocumentItem, ShiftPattern, StaffMember } from "../types";
 
 const POSITIONS = [
@@ -539,7 +539,7 @@ function AttendanceTab({ staff }: { staff?: StaffMember[] }) {
   const checkIn = useMutation({
     mutationFn: async (staffId: string) => {
       const existing = todays.find((a) => a.staff_id === staffId);
-      const time = new Date().toISOString().slice(11, 16);
+      const time = timeHm();
       if (existing) return api.patch(`/attendance/${existing.id}`, { check_in: time, check_out: null, status: "Present" });
       return api.post("/attendance", { staff_id: staffId, date: today, check_in: time, check_out: null, status: "Present" });
     },
@@ -547,7 +547,7 @@ function AttendanceTab({ staff }: { staff?: StaffMember[] }) {
   });
   const checkOut = useMutation({
     mutationFn: async (recordId: string) => {
-      const time = new Date().toISOString().slice(11, 16);
+      const time = timeHm();
       return api.patch(`/attendance/${recordId}`, { check_out: time });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance"] }),

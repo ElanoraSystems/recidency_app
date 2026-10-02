@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import local_today
 from app.api.deps import require_module
 from app.crud.activity import log_activity
 from app.db.session import get_db
@@ -135,9 +136,9 @@ async def log_service(
         raise HTTPException(404, "Linked asset not found")
 
     days = 90 if pm.frequency == "Quarterly" else 182 if pm.frequency == "Bi-annual" else 30
-    next_due = date.today() + timedelta(days=days)
+    next_due = local_today() + timedelta(days=days)
     pm.due_date = next_due
-    asset.last_service = date.today()
+    asset.last_service = local_today()
     asset.next_service = next_due
 
     await log_activity(db, user, "Logged service", f"{asset.name} — {pm.task}")

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import local_today
 from app.api.deps import require_module
 from app.crud.activity import log_activity
 from app.db.session import get_db
@@ -132,7 +133,7 @@ async def _recompute_area_completion(db: AsyncSession, area_id: uuid.UUID | None
     area = await db.get(Area, area_id)
     if not area:
         return
-    today = date.today()
+    today = local_today()
     window_start = today - timedelta(days=6)
     window_end = today + timedelta(days=6)
     tasks = (
@@ -369,6 +370,6 @@ async def add_comment(
     task = await db.get(Task, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
-    db.add(TaskComment(task_id=task_id, author_name=user.name, text=text, at=date.today()))
+    db.add(TaskComment(task_id=task_id, author_name=user.name, text=text, at=local_today()))
     await db.commit()
     return await _task_out(db, task)

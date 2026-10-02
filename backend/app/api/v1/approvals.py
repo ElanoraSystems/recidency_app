@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import local_today
 from app.api.deps import get_current_user
 from app.api.v1.purchasing import decide_po
 from app.api.v1.tasks import _recompute_area_completion, _spawn_next_occurrence
@@ -248,7 +249,7 @@ async def decide(
             task.status = "In Progress"
             task.verified = False
             comment_text = f"Sent back for rework by {user.name}"
-        db.add(TaskComment(task_id=task.id, author_name=user.name, text=comment_text, at=date.today()))
+        db.add(TaskComment(task_id=task.id, author_name=user.name, text=comment_text, at=local_today()))
         await log_activity(db, user, "Verified task" if approve else "Rejected task", task.title)
         if task.category == "Housekeeping":
             await _recompute_area_completion(db, task.location_id)

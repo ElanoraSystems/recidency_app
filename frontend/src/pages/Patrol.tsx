@@ -5,6 +5,7 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { api } from "../api/client";
 import { useList } from "../api/hooks";
 import { Badge, Button, Card, EmptyState, PageHeader, Spinner, Table, Td, Th } from "../components/ui";
+import { dateIn, todayIso } from "../lib/date";
 import type { Area, PatrolLogEntry } from "../types";
 
 const TABS = ["Scan", "Patrol Log"] as const;
@@ -139,8 +140,8 @@ function PatrolLogTab() {
   if (isLoading) return <Spinner />;
   if (!data || data.length === 0) return <EmptyState label="No patrol scans logged yet." />;
 
-  const today = new Date().toISOString().slice(0, 10);
-  const todayCount = data.filter((p) => p.scanned_at.slice(0, 10) === today).length;
+  const today = todayIso();
+  const todayCount = data.filter((p) => dateIn(p.scanned_at) === today).length;
 
   return (
     <div>

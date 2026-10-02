@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import local_today
 from app.api.deps import require_module
 from app.crud.activity import log_activity
 from app.db.session import get_db
@@ -114,7 +115,7 @@ async def create_stock_count(
         cc_id = (await db.execute(select(CostCenter.id).where(CostCenter.label == DEFAULT_LOCATION))).scalar_one_or_none()
     if cc_id is None or not await db.get(CostCenter, cc_id):
         raise HTTPException(400, "Select a cost center to count")
-    count = StockCount(date=date.today(), status="Draft", counted_by=user.id, cost_center_id=cc_id)
+    count = StockCount(date=local_today(), status="Draft", counted_by=user.id, cost_center_id=cc_id)
     db.add(count)
     await db.flush()
 

@@ -6,7 +6,7 @@ import { useCreate, useList, useUpdate } from "../api/hooks";
 import { Icon } from "../components/icons";
 import { HistoryPanel, StatusBadge, WorkflowBar, errorText } from "../components/Workflow";
 import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
-import { fmtDate, todayIso } from "../lib/date";
+import { addDays, fmtDate, todayIso } from "../lib/date";
 import type { CostCenter, CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, Supplier, TxnStatus, UnitOfMeasureEntry, PriceHistoryEntry } from "../types";
 
 interface GrnLine { id: string; name: string; ordered_qty: number; received_qty: number; unit: string; ordered_price: number; price: number; line_total: number; expiry: string | null; batch_label: string | null }
@@ -211,7 +211,7 @@ interface RequestForm { urgency: string; costCenter: string; note: string; deliv
 const newRequestLine = (): RequestLine =>
   ({ key: crypto.randomUUID(), itemRef: "", item: "", qty: 1, unit: "", category: "", price: 0 });
 
-const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+const inDays = (n: number) => addDays(todayIso(), n);
 
 // Creates a Draft pre-filled from stock shortcuts (basket, low-stock) and
 // opens it in the editor, where the buyer confirms the delivery date.
@@ -565,7 +565,7 @@ export function NewPurchaseOrderPage() {
                 </tbody>
               </Table>
               <div className="text-[12.5px]" style={{ color: "var(--ink-400)" }}>
-                Order total: KWD {groupTotal.toFixed(2)}{groupTotal > 500 ? " — over KWD 500, will require Owner approval" : ""}
+                Order total: KWD {groupTotal.toFixed(2)} — goes for approval once created
               </div>
             </div>
           );

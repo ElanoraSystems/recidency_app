@@ -6,7 +6,7 @@ import { api } from "../api/client";
 import { useCreate, useList } from "../api/hooks";
 import { Icon } from "../components/icons";
 import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
-import { daysUntil, fmtDate, todayIso } from "../lib/date";
+import { addDays, daysUntil, fmtDate, todayIso } from "../lib/date";
 import { MealLogTab, TransferTab, WasteTab } from "./KitchenTransactions";
 import type { FoodInventoryBatchEntry, FoodInventoryItem, MealCategory, ProposedMenu, Recipe, RecipeIngredient, UnitOfMeasureEntry, WeeklyMealPlan, WeeklyMealPlanEntry } from "../types";
 
@@ -875,9 +875,9 @@ const PLAN_MEALS: { key: WeeklyMealPlanEntry["meal_type"]; label: string }[] = [
 ];
 
 function upcomingSunday(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + ((7 - d.getDay()) % 7));
-  return d.toISOString().slice(0, 10);
+  const today = todayIso();
+  const weekday = new Date(today + "T00:00:00Z").getUTCDay();
+  return addDays(today, (7 - weekday) % 7);
 }
 
 function StaffMealPlanTab() {
@@ -903,9 +903,7 @@ function StaffMealPlanTab() {
       // point the picker at the following week so the next one can start.
       const submitted = plans?.find((p) => p.id === id);
       if (submitted) {
-        const next = new Date(submitted.week_start_date + "T00:00:00");
-        next.setDate(next.getDate() + 7);
-        setNewWeekDate(next.toISOString().slice(0, 10));
+        setNewWeekDate(addDays(submitted.week_start_date, 7));
       }
       setSelectedId(null);
     },

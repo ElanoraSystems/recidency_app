@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { useCreate, useList } from "../api/hooks";
 import { Badge, Button, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th } from "../components/ui";
-import { daysLabel, daysUntil, todayIso } from "../lib/date";
+import { addDays, daysLabel, daysUntil, todayIso } from "../lib/date";
 import type { StaffMember } from "../types";
 
 interface GardenTask {
@@ -71,9 +71,7 @@ function GardenTab() {
   const markDone = useMutation({
     mutationFn: async (t: GardenTask) => {
       const days = t.frequency === "Weekly" ? 7 : t.frequency === "Daily" ? 1 : 30;
-      const next = new Date();
-      next.setDate(next.getDate() + days);
-      return api.patch(`/garden-tasks/${t.id}`, { last_done: todayIso(), next_due: next.toISOString().slice(0, 10) });
+      return api.patch(`/garden-tasks/${t.id}`, { last_done: todayIso(), next_due: addDays(todayIso(), days) });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["garden-tasks"] }),
   });

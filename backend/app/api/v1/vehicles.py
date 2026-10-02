@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import local_today
 from app.api.deps import require_module
 from app.crud.activity import log_activity
 from app.db.session import get_db
@@ -22,11 +23,11 @@ async def log_service(
     if not vehicle:
         raise HTTPException(404, "Vehicle not found")
 
-    next_service = date.today() + timedelta(days=90)
-    vehicle.last_service = date.today()
+    next_service = local_today() + timedelta(days=90)
+    vehicle.last_service = local_today()
     vehicle.next_service = next_service
     db.add(VehicleHistory(
-        vehicle_id=vehicle.id, date=date.today(), type="Service",
+        vehicle_id=vehicle.id, date=local_today(), type="Service",
         description="Routine service logged", cost=75,
     ))
 

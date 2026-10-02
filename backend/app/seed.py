@@ -11,6 +11,7 @@ from datetime import date, time, timedelta
 
 from sqlalchemy import select
 
+from app.core.clock import local_today
 from app.core.security import hash_password
 from app.db.session import AsyncSessionLocal
 from app.models.facilities import Area, Asset, Inspection, MaintenanceRequest, PmSchedule, Vehicle, VehicleHistory
@@ -34,7 +35,7 @@ DEV_PASSWORD = "password123"
 
 
 def D(n: int) -> date:
-    return date.today() + timedelta(days=n)
+    return local_today() + timedelta(days=n)
 
 
 NAV = [

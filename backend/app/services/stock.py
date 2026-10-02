@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import local_today
 from app.models.kitchen import CostCenter, FoodInventory, FoodInventoryBatch
 from app.models.purchasing import Inventory
 from app.models.stock import InventoryBalance, StockMovement
@@ -175,7 +176,7 @@ async def post_in(
     if stock_type == "food":
         batch = FoodInventoryBatch(
             food_inventory_id=stock_id, batch_label=batch_label, qty=qty, expiry=expiry, cost=unit_cost,
-            received_date=received_date or date.today(), cost_center_id=cc_id,
+            received_date=received_date or local_today(), cost_center_id=cc_id,
         )
         db.add(batch)
         await db.flush()
@@ -371,7 +372,7 @@ async def reverse_txn(db: AsyncSession, txn_id: uuid.UUID, user: User | None) ->
                     db.add(
                         FoodInventoryBatch(
                             food_inventory_id=m.stock_id, batch_label="Reversal", qty=float(m.qty), expiry=None,
-                            cost=float(m.unit_cost), received_date=date.today(), cost_center_id=m.from_cost_center_id,
+                            cost=float(m.unit_cost), received_date=local_today(), cost_center_id=m.from_cost_center_id,
                         )
                     )
         else:

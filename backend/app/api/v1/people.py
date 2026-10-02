@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import local_time, local_today
 from app.api.deps import get_current_user, require_module
 from app.core.security import hash_password
 from app.crud.activity import log_activity
@@ -61,8 +62,8 @@ async def my_attendance(db: AsyncSession = Depends(get_db), user: User = Depends
 @router.post("/attendance/checkin", response_model=AttendanceOut)
 async def check_in(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     profile = await _my_staff_profile(db, user)
-    today = date.today()
-    now = datetime.now().time().replace(second=0, microsecond=0)
+    today = local_today()
+    now = local_time().replace(second=0, microsecond=0)
     existing = (
         await db.execute(select(Attendance).where(Attendance.staff_id == profile.id, Attendance.date == today))
     ).scalar_one_or_none()
@@ -85,13 +86,13 @@ async def check_in(db: AsyncSession = Depends(get_db), user: User = Depends(get_
 @router.post("/attendance/checkout", response_model=AttendanceOut)
 async def check_out(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     profile = await _my_staff_profile(db, user)
-    today = date.today()
+    today = local_today()
     record = (
         await db.execute(select(Attendance).where(Attendance.staff_id == profile.id, Attendance.date == today))
     ).scalar_one_or_none()
     if not record or record.status != "Present":
         raise HTTPException(400, "You haven't checked in today")
-    record.check_out = datetime.now().time().replace(second=0, microsecond=0)
+    record.check_out = local_time().replace(second=0, microsecond=0)
     await db.commit()
     await db.refresh(record)
     return AttendanceOut(
@@ -141,7 +142,7 @@ async def request_leave(
     days = (payload.to_date - payload.from_date).days + 1
     leave = LeaveRequest(
         staff_id=profile.id, type=payload.type, from_date=payload.from_date, to_date=payload.to_date,
-        days=days, status="Pending", reason=payload.reason, requested_on=date.today(),
+        days=days, status="Pending", reason=payload.reason, requested_on=local_today(),
     )
     db.add(leave)
     await log_activity(db, user, "Requested leave", f"{payload.type} — {days} day(s)")

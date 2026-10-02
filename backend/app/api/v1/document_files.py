@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import local_today
 from app.api.deps import require_module
 from app.db.session import get_db
 from app.models.finance import Document, DocumentFile
@@ -45,7 +46,7 @@ async def upload_document_file(
         content_type=file.content_type,
         size_bytes=len(contents),
         uploaded_by=user.id,
-        uploaded_at=date.today(),
+        uploaded_at=local_today(),
     )
     db.add(record)
     await db.commit()

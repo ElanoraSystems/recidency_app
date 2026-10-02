@@ -15,6 +15,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy import select
 
+from app.core.clock import local_today
 from app.api.v1.kitchen import (
     RecipeIngredientIn,
     _compute_raw_yield_g,
@@ -67,7 +68,7 @@ def _stamp(doc, user: User, day: int) -> None:
     doc.submitted_by = doc.approved_by = doc.closed_by = user.id
     doc.submitted_at = doc.approved_at = doc.closed_at = when
 
-TODAY = date.today()
+TODAY = local_today()
 START = TODAY - timedelta(days=90)
 
 

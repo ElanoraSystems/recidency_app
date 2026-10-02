@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.core.clock import local_today
 from app.api.deps import _user_allowed_modules, get_current_user
 from app.db.session import get_db
 from app.models.facilities import Attachment
@@ -52,7 +53,7 @@ async def upload_attachment(
         content_type=file.content_type,
         size_bytes=len(contents),
         uploaded_by=user.id,
-        uploaded_at=date.today(),
+        uploaded_at=local_today(),
     )
     db.add(record)
     await db.commit()

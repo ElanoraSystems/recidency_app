@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import local_today
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.facilities import Area, MaintenanceRequest
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 @router.get("/summary")
 async def dashboard_summary(db: AsyncSession = Depends(get_db), _user: User = Depends(get_current_user)):
-    today = date.today()
+    today = local_today()
 
     staff_onsite = (
         await db.execute(

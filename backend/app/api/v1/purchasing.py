@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import local_today
 from app.api.deps import require_module
 from app.crud.activity import log_activity
 from app.db.session import get_db
@@ -161,7 +162,7 @@ async def create_purchase_request(
     values = [_pr_line_values(l) for l in payload.lines]
     pr = PurchaseRequest(
         code=await _next_code(db, PurchaseRequest, "PR", 3001),
-        request_date=date.today(), required_delivery_date=payload.required_delivery_date, status=workflow.DRAFT,
+        request_date=local_today(), required_delivery_date=payload.required_delivery_date, status=workflow.DRAFT,
         urgency=payload.urgency, note=payload.note, cost_center=payload.cost_center, requested_by=user.id,
     )
     db.add(pr)
@@ -605,7 +606,7 @@ async def create_purchase_order(
         code=await _next_code(db, PurchaseOrder, "PO", 1001),
         supplier_id=payload.supplier_id,
         status=workflow.DRAFT,
-        order_date=date.today(),
+        order_date=local_today(),
         expected_date=payload.expected_date,
         total=total,
         payment_status="Unpaid",
@@ -756,21 +757,18 @@ async def convert_pr_to_po(
         po = PurchaseOrder(
             code=await _next_code(db, PurchaseOrder, "PO", 1001),
             supplier_id=group.supplier_id,
-            # Orders above 500 still need their own sign-off; smaller ones
-            # are approved with the request they came from.
-            status=workflow.SUBMITTED if total > 500 else workflow.APPROVED,
-            order_date=date.today(),
+            # Every order needs its own approval, whatever the total.
+            status=workflow.DRAFT,
+            order_date=local_today(),
             expected_date=group.expected_date,
             total=total,
             payment_status="Unpaid",
             source_pr_id=pr.id,
             created_by=user.id,
         )
-        if po.status == workflow.APPROVED:
-            po.approved_by, po.approved_at = user.id, datetime.now(timezone.utc)
         db.add(po)
         await db.flush()
-        await audit.record(db, user, "purchase_order", po.id, po.code, "create", to_status=po.status,
+        await audit.record(db, user, "purchase_order", po.id, po.code, "create", to_status=workflow.DRAFT,
                            reason=f"Converted from {pr.code}")
         for g in group.lines:
             line = pr_lines[g.pr_line_id]
@@ -778,6 +776,7 @@ async def convert_pr_to_po(
                 po_id=po.id, item_master_id=line.item_master_id, name=line.item_name,
                 qty=float(line.qty), unit=line.unit, price=g.price, last_price=g.price,
             ))
+        await workflow.apply_action(db, workflow.get_doctype("purchase_order"), po, "submit", user)
         created_pos.append(po)
         po_codes.append(po.code)
 
@@ -991,7 +990,7 @@ async def receive_goods(
     po, resolved = await _validate_grn(db, payload)
     grn = Grn(
         code=await _next_code(db, Grn, "GRN", 2001), po_id=po.id, supplier_id=po.supplier_id,
-        date=payload.date or date.today(), receiving_cost_center_id=payload.receiving_cost_center_id,
+        date=payload.date or local_today(), receiving_cost_center_id=payload.receiving_cost_center_id,
         notes=payload.notes, received_by=user.id,
     )
     db.add(grn)
