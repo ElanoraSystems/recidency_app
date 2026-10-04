@@ -179,6 +179,8 @@ class PurchaseRequestLine(Base, UUIDPKMixin):
     category: Mapped[str] = mapped_column(String(80))
     est_unit_price: Mapped[float] = mapped_column(Numeric(10, 3), default=0)
     est_cost: Mapped[float] = mapped_column(Numeric(10, 2), default=0)  # qty x est_unit_price
+    # Free-text detail or requirement for this item (brand, size, spec).
+    description: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
 
 class PurchaseOrder(Base, UUIDPKMixin, TimestampMixin, WorkflowMixin):
@@ -219,6 +221,7 @@ class PoLine(Base, UUIDPKMixin):
     price: Mapped[float] = mapped_column(Numeric(10, 3))
     last_price: Mapped[float | None] = mapped_column(Numeric(10, 3), nullable=True)
     received_qty: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    description: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
 
 class Grn(Base, UUIDPKMixin, TimestampMixin, WorkflowMixin):
@@ -235,6 +238,8 @@ class Grn(Base, UUIDPKMixin, TimestampMixin, WorkflowMixin):
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
     # Required when any line was invoiced at a price different from the order.
     variance_note: Mapped[str | None] = mapped_column(String, nullable=True)
+    # The supplier's own invoice / delivery note reference, for traceability.
+    supplier_invoice_no: Mapped[str | None] = mapped_column(String(60), nullable=True)
     received_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

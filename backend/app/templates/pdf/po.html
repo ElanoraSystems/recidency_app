@@ -70,7 +70,7 @@
     <tbody>
       {% for line in lines %}
       <tr>
-        <td>{{ line.name }}</td>
+        <td>{{ line.name }}{% if line.description %}<br><span style="color:#777;font-size:9px">{{ line.description }}</span>{% endif %}</td>
         <td class="num">{{ "%.2f"|format(line.qty) }}</td>
         <td>{{ line.unit }}</td>
         <td class="num">{{ currency }} {{ "%.3f"|format(line.price) }}</td>

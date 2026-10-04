@@ -375,6 +375,7 @@ export interface PurchaseRequestLine {
   qty: number;
   unit: string;
   category: string;
+  description: string | null;
   est_unit_price: number;
   est_cost: number;
 }
@@ -414,6 +415,7 @@ export interface PoLine {
   price: number;
   last_price: number | null;
   received_qty: number;
+  description: string | null;
 }
 
 export interface PurchaseOrder {

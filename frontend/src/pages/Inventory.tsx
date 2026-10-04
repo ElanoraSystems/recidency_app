@@ -45,7 +45,7 @@ function toStockRows(stock?: InventoryItem[], foodInventory?: FoodInventoryItem[
   return [...general, ...food];
 }
 
-const TABS = ["Stock", "Balances", "Movements", "Item Master", "Stock Count", "Cost of Sales"] as const;
+const TABS = ["Stock", "Balances", "Movements", "Item Master", "Stock Count", "Consumption Cost"] as const;
 const CATEGORIES = [
   "Food", "Dairy", "Meat", "Seafood", "Vegetables", "Frozen", "Bakery", "Dry Goods",
   "Beverages", "Cleaning Chemicals", "Toiletries", "Linen", "Kitchenware",
@@ -84,7 +84,7 @@ export function InventoryPage() {
         action={tab === "Item Master" ? <Button onClick={() => setModal(true)}>+ New Item</Button> : undefined}
       />
 
-      {tab !== "Cost of Sales" && <div className="mb-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
+      {tab !== "Consumption Cost" && <div className="mb-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
         {tab === "Stock" || tab === "Balances" || tab === "Movements" ? (
           <>
             <StatTile label="Total Items" icon="inventory" value={(stock?.length ?? 0) + (foodInventory?.length ?? 0)} />
@@ -129,7 +129,7 @@ export function InventoryPage() {
         <BalancesTab />
       ) : tab === "Movements" ? (
         <MovementsTab />
-      ) : tab === "Cost of Sales" ? (
+      ) : tab === "Consumption Cost" ? (
         <CostOfSalesTab />
       ) : tab === "Item Master" ? (
         <ItemMasterTab items={itemMaster} stock={stock} foodInventory={foodInventory} />
@@ -181,15 +181,16 @@ function StockDetailModal({ item, onClose }: { item: StockRow; onClose: () => vo
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const low = item.qty < item.min;
+  // Requests are raised for Item Master entries; this stock row's catalog entry.
+  const { data: itemMasters } = useList<ItemMasterEntry>("item-master", "/item-master");
+  const master = itemMasters?.find((im) => im.stock_id === item.id);
   const supplierName = suppliers?.find((s) => s.id === item.supplier_id)?.name ?? "—";
 
   async function onCreatePR() {
     setCreating(true);
     try {
-      const id = await createDraftRequest([{
-        item_master_id: null, item_name: item.name, qty: item.max - item.qty, unit: item.unit,
-        category: item.category, est_unit_price: item.avgPrice,
-      }]);
+      if (!master) return;
+      const id = await createDraftRequest([{ item_master_id: master.id, qty: item.max - item.qty }]);
       onClose();
       navigate(`/purchasing/requests/${id}/edit`);
     } finally {
@@ -216,9 +217,15 @@ function StockDetailModal({ item, onClose }: { item: StockRow; onClose: () => vo
         </div>
         <LocationBreakdown stockId={item.id} />
         {low && (
-          <Button onClick={onCreatePR} disabled={creating}>
-            {creating ? "Creating..." : "Create Purchase Request"}
-          </Button>
+          master ? (
+            <Button onClick={onCreatePR} disabled={creating}>
+              {creating ? "Creating..." : "Create Purchase Request"}
+            </Button>
+          ) : (
+            <p className="text-[12.5px]" style={{ color: "var(--ink-500)" }}>
+              Add this item to the Item Master first - purchase requests are raised for Item Master items.
+            </p>
+          )
         )}
       </div>
     </Modal>

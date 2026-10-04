@@ -172,7 +172,7 @@ const monthName = (period: string) =>
   new Date(period + "-01T00:00:00").toLocaleDateString("en-GB", { month: "short", year: "numeric" });
 const kwd = (n: number) => n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// Month-end close: closing recalculates the month's cost of sales from the
+// Month-end close: closing recalculates the month's consumption cost from the
 // ledger and locks the month against further stock postings, so a reported
 // figure cannot move afterwards unless the owner reopens the month.
 function PeriodsPanel() {
@@ -224,14 +224,83 @@ function PeriodsPanel() {
         </tbody>
       </Table>
       <p className="mt-1.5 text-[12px]" style={{ color: "var(--ink-400)" }}>
-        Closing recalculates the month's cost of sales and blocks any stock posting dated in it (including reopening a document from it).
+        Closing recalculates the month's consumption cost and blocks any stock posting dated in it (including reopening a document from it).
         Only the owner can close or reopen a month. Cost centers with activity but no count are flagged so they can be counted first.
       </p>
     </div>
   );
 }
 
-// Monthly cost of sales per cost center. A row is written each time a stock
+interface ConsumptionRowData {
+  key: string; label: string; unit: string | null; qty: number | null;
+  meals_value: number; waste_value: number; count_variance: number; total_value: number;
+}
+
+// What was used up in any period: by item, location, month or type, with the
+// quantity and the cost of the stock actually drawn. Live from the ledger.
+function ConsumptionReport() {
+  const { data: costCenters } = useList<CostCenter>("cost-centers", "/kitchen/cost-centers");
+  const [f, setF] = useState({ from: "", to: "", cc: "", group: "item", item: "" });
+  const set = (k: keyof typeof f) => (v: string) => setF((s) => ({ ...s, [k]: v }));
+  const { data, isLoading } = useQuery<{ rows: ConsumptionRowData[]; total_value: number; note: string }>({
+    queryKey: ["consumption", f],
+    queryFn: async () =>
+      (await api.get("/stock/consumption", {
+        params: { group_by: f.group, date_from: f.from || undefined, date_to: f.to || undefined, cost_center_id: f.cc || undefined, item: f.item || undefined },
+      })).data,
+  });
+  return (
+    <div>
+      <h3 className="mb-2 text-[13px] font-semibold" style={{ color: "var(--ink-700)" }}>Consumption by period</h3>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <DateRangeFilter from={f.from} to={f.to} onFromChange={set("from")} onToChange={set("to")} />
+        <select className={inputCls} style={inputStyle} value={f.group} onChange={(e) => set("group")(e.target.value)}>
+          <option value="item">By item</option>
+          <option value="cost_center">By location</option>
+          <option value="month">By month</option>
+          <option value="type">By type</option>
+        </select>
+        <select className={inputCls} style={inputStyle} value={f.cc} onChange={(e) => set("cc")(e.target.value)}>
+          <option value="">All locations</option>
+          {costCenters?.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+        <input className={inputCls} style={inputStyle} placeholder="Item…" value={f.item} onChange={(e) => set("item")(e.target.value)} />
+      </div>
+      {isLoading || !data ? <Spinner /> : data.rows.length === 0 ? <EmptyState label="No consumption in this period." /> : (
+        <Table>
+          <thead>
+            <tr>
+              <Th>{f.group === "item" ? "Item" : f.group === "cost_center" ? "Location" : f.group === "month" ? "Month" : "Type"}</Th>
+              {f.group === "item" && <Th>Quantity used</Th>}
+              <Th>Meals</Th><Th>Waste</Th><Th>Count variance</Th><Th>Consumption cost (KWD)</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((r) => (
+              <tr key={r.key}>
+                <Td className="font-medium">{r.label.replace("_", " ")}</Td>
+                {f.group === "item" && <Td>{r.qty != null ? `${fmtQty(r.qty)} ${r.unit ?? ""}` : "—"}</Td>}
+                <Td>{kwd(r.meals_value)}</Td><Td>{kwd(r.waste_value)}</Td><Td>{kwd(r.count_variance)}</Td>
+                <Td className="font-semibold">{kwd(r.total_value)}</Td>
+              </tr>
+            ))}
+            <tr>
+              <Td className="font-semibold">Total</Td>
+              {f.group === "item" && <Td>{" "}</Td>}
+              <Td>{" "}</Td><Td>{" "}</Td><Td>{" "}</Td>
+              <Td className="font-bold">{kwd(data.total_value)}</Td>
+            </tr>
+          </tbody>
+        </Table>
+      )}
+      <p className="mt-1.5 text-[12px]" style={{ color: "var(--ink-400)" }}>
+        {data?.note} Transfers between locations are not consumption.
+      </p>
+    </div>
+  );
+}
+
+// Monthly consumption cost per cost center. A row is written each time a stock
 // count is submitted, so this is the permanent month-by-month history.
 export function CostOfSalesTab() {
   const { data: costCenters } = useList<CostCenter>("cost-centers", "/kitchen/cost-centers");
@@ -255,9 +324,10 @@ export function CostOfSalesTab() {
   return (
     <div className="flex flex-col gap-5">
       <PeriodsPanel />
+      <ConsumptionReport />
       <p className="text-[12.5px]" style={{ color: "var(--ink-500)" }}>
-        Cost of sales = opening stock + purchases + transfers in - transfers out - closing stock, valued at cost from the
-        stock ledger. It is calculated and saved for the cost center each time a monthly stock count is submitted (count
+        Consumption cost = opening stock + purchases + transfers in - transfers out - closing stock, valued at cost from the
+        stock ledger (what was used up: meals, waste and count shortfalls). It is calculated and saved for the cost center each time a monthly stock count is submitted (count
         date sets the month; a later count in the same month replaces the earlier figure).
       </p>
       <div className="flex flex-wrap items-center gap-3">
@@ -279,7 +349,7 @@ export function CostOfSalesTab() {
       </div>
 
       {data.length === 0 ? (
-        <EmptyState label="No cost of sales recorded yet - it appears here once a monthly stock count is submitted." />
+        <EmptyState label="No consumption cost recorded yet - it appears here once a monthly stock count is submitted." />
       ) : (
         <>
           <Table>
@@ -306,7 +376,7 @@ export function CostOfSalesTab() {
             <thead>
               <tr>
                 <Th>Month</Th><Th>Cost center</Th><Th>Stock</Th><Th>Opening</Th><Th>Purchases</Th><Th>Transfers in</Th>
-                <Th>Transfers out</Th><Th>Closing</Th><Th>Cost of sales</Th><Th>Meals</Th><Th>Waste</Th><Th>Count variance</Th>
+                <Th>Transfers out</Th><Th>Closing</Th><Th>Consumption cost</Th><Th>Meals</Th><Th>Waste</Th><Th>Count variance</Th>
               </tr>
             </thead>
             <tbody>

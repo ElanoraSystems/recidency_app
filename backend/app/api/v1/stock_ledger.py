@@ -7,6 +7,7 @@ from datetime import date, datetime, time, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import case, func, select
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import _user_allowed_modules, get_current_user
@@ -360,3 +361,88 @@ async def reopen_period(
     await audit.record(db, user, "period", row.id, period, "reopen", reason=payload.reason.strip())
     await db.commit()
     return next(p for p in await periods(db, user) if p.period == period)
+
+
+# ------------------------------------------------------------- consumption --
+CONSUMPTION_TYPES = ("MEAL_LOG", "WASTE", "COUNT")
+
+
+class ConsumptionRow(BaseModel):
+    key: str
+    label: str
+    unit: str | None  # only for the per-item grouping
+    qty: float | None
+    meals_value: float
+    waste_value: float
+    count_variance: float
+    total_value: float
+
+
+class ConsumptionReport(BaseModel):
+    rows: list[ConsumptionRow]
+    total_value: float
+    note: str
+
+
+@router.get("/consumption", response_model=ConsumptionReport)
+async def consumption(
+    group_by: str = "item",
+    date_from: date | None = None,
+    date_to: date | None = None,
+    cost_center_id: uuid.UUID | None = None,
+    stock_type: str | None = None,
+    item: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(stock_view_access),
+):
+    """Stock used up in a period, valued at the cost of the stock actually
+    drawn: meals served, waste, and what stock counts found missing (net of
+    surpluses and reversals). Transfers between locations are not consumption."""
+    m = StockMovement
+    orig = aliased(StockMovement)
+    eff = func.coalesce(orig.txn_type, m.txn_type)
+    outbound = m.from_cost_center_id.is_not(None)
+    sign = case((outbound, 1), else_=-1)  # a reversal or surplus flows back in
+    location = func.coalesce(m.from_cost_center_id, m.to_cost_center_id)
+    keys = {
+        "item": m.item_name, "cost_center": location, "month": func.to_char(m.posting_date, "YYYY-MM"), "type": eff,
+    }
+    if group_by not in keys:
+        raise HTTPException(400, "group_by must be item, cost_center, month or type")
+    key_col = keys[group_by]
+    stmt = (
+        select(key_col, eff, func.min(m.unit), func.sum(sign * m.qty), func.sum(sign * m.total_value))
+        .select_from(m).outerjoin(orig, orig.id == m.reverses_id)
+        .where(eff.in_(CONSUMPTION_TYPES))
+        .group_by(key_col, eff)
+    )
+    if date_from:
+        stmt = stmt.where(m.posting_date >= date_from)
+    if date_to:
+        stmt = stmt.where(m.posting_date <= date_to)
+    if cost_center_id:
+        stmt = stmt.where((m.from_cost_center_id == cost_center_id) | (m.to_cost_center_id == cost_center_id))
+    if stock_type:
+        stmt = stmt.where(m.stock_type == stock_type)
+    if item:
+        stmt = stmt.where(m.item_name.ilike(f"%{item}%"))
+    labels = {c.id: c.label for c in (await db.execute(select(CostCenter))).scalars().all()}
+    acc: dict[str, dict] = {}
+    for key, kind, unit, qty, value in (await db.execute(stmt)).all():
+        row = acc.setdefault(str(key), {"unit": unit, "qty": 0.0, "MEAL_LOG": 0.0, "WASTE": 0.0, "COUNT": 0.0})
+        row["qty"] += float(qty)
+        row[kind] += float(value)
+    rows = [
+        ConsumptionRow(
+            key=k, label=labels.get(uuid.UUID(k), "?") if group_by == "cost_center" else k,
+            unit=v["unit"] if group_by == "item" else None, qty=round(v["qty"], 3) if group_by == "item" else None,
+            meals_value=round(v["MEAL_LOG"], 2), waste_value=round(v["WASTE"], 2), count_variance=round(v["COUNT"], 2),
+            total_value=round(v["MEAL_LOG"] + v["WASTE"] + v["COUNT"], 2),
+        )
+        for k, v in acc.items()
+    ]
+    rows.sort(key=(lambda r: r.key) if group_by == "month" else (lambda r: -r.total_value))
+    return ConsumptionReport(
+        rows=rows, total_value=round(sum(r.total_value for r in rows), 2),
+        note="Valued at the cost of the stock actually used (batch costs). Meals + waste + count variance.",
+    )

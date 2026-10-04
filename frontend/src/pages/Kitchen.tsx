@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { api } from "../api/client";
 import { useCreate, useList } from "../api/hooks";
 import { Icon } from "../components/icons";
+import { IngredientAdder, type IngredientAdderHandle, type IngredientPayload } from "../components/IngredientAdder";
 import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { addDays, daysUntil, fmtDate, fmtDateTime, todayIso } from "../lib/date";
 import { MealLogTab, TransferTab, WasteTab } from "./KitchenTransactions";
@@ -116,14 +117,6 @@ function RecipesTab() {
   );
 }
 
-type IngredientPayload = {
-  food_inventory_id: string | null;
-  sub_recipe_id: string | null;
-  qty: number;
-  yield_pct: number;
-  override_unit_id: string | null;
-};
-
 function toPayload(i: RecipeIngredient): IngredientPayload {
   return {
     food_inventory_id: i.food_inventory_id,
@@ -155,17 +148,10 @@ export function RecipeDetailPage() {
   const { data: uomsRaw } = useList<UnitOfMeasureEntry>("units-of-measure", "/units-of-measure");
   const { data: allRecipes } = useList<Recipe>("recipes", "/kitchen/recipes");
   const uoms = [...(uomsRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
-  const [source, setSource] = useState<"stock" | "sub_recipe">("stock");
-  const [ing, setIng] = useState<{ food_inventory_id: string; sub_recipe_id: string; qty: number; yield_pct: number; override_unit_id: string }>(
-    { food_inventory_id: "", sub_recipe_id: "", qty: 0, yield_pct: 100, override_unit_id: "" }
-  );
+  const adderRef = useRef<IngredientAdderHandle>(null);
+  const [pendingIngredient, setPendingIngredient] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
-  // Lets Enter (in the qty/yield fields) add the ingredient and jump focus
-  // straight back to the item picker, so adding several ingredients in a
-  // row doesn't need a mouse trip back up to the dropdown each time.
-  const stockPickerRef = useRef<HTMLSelectElement>(null);
-  const subRecipePickerRef = useRef<HTMLSelectElement>(null);
 
   // raw_yield_g is never sent — the server derives it from the ingredient
   // list itself (see kitchen.py's _compute_raw_yield_g), so it can't drift
@@ -206,34 +192,11 @@ export function RecipeDetailPage() {
   const subRecipeOptions = (allRecipes ?? []).filter((r) => r.id !== recipe.id).sort((a, b) => a.name.localeCompare(b.name));
 
   // An ingredient picked but not yet added would be lost on leaving; Save adds it.
-  const pendingIngredient = source === "stock" ? !!ing.food_inventory_id : !!ing.sub_recipe_id;
   function saveAll() {
-    if (pendingIngredient) addIngredient();
-    else save.mutate({ ingredients: recipe!.ingredients.map(toPayload) });
+    if (!adderRef.current?.commit()) save.mutate({ ingredients: recipe!.ingredients.map(toPayload) });
   }
-
-  function addIngredient() {
-    if (source === "stock" && !ing.food_inventory_id) return;
-    if (source === "sub_recipe" && !ing.sub_recipe_id) return;
-    save.mutate({
-      ingredients: [
-        ...recipe!.ingredients.map(toPayload),
-        {
-          food_inventory_id: source === "stock" ? ing.food_inventory_id : null,
-          sub_recipe_id: source === "sub_recipe" ? ing.sub_recipe_id : null,
-          qty: ing.qty,
-          yield_pct: ing.yield_pct,
-          override_unit_id: source === "stock" ? (ing.override_unit_id || null) : null,
-        },
-      ],
-    });
-    setIng({ food_inventory_id: "", sub_recipe_id: "", qty: 0, yield_pct: 100, override_unit_id: "" });
-    (source === "stock" ? stockPickerRef : subRecipePickerRef).current?.focus();
-  }
-  function handleQtyKeyDown(e: React.KeyboardEvent) {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    if (source === "stock" ? ing.food_inventory_id : ing.sub_recipe_id) addIngredient();
+  function addIngredient(ingredient: IngredientPayload) {
+    save.mutate({ ingredients: [...recipe!.ingredients.map(toPayload), ingredient] });
   }
   function removeIngredient(idx: number) {
     save.mutate({ ingredients: recipe!.ingredients.filter((_, i) => i !== idx).map(toPayload) });
@@ -268,16 +231,6 @@ export function RecipeDetailPage() {
       ...(recipe!.portions == null ? { portion_size_g: null } : {}),
     });
   }
-  const selectedStock = foodInventory?.find((f) => f.id === ing.food_inventory_id);
-  // Mirrors app/services/units.py's family check — only offer an override
-  // unit the backend will actually accept, instead of letting the user
-  // pick e.g. "kg" for a "units"-tracked item and only finding out it's
-  // rejected after hitting Add.
-  const stockUom = uoms.find((u) => u.label === selectedStock?.unit);
-  const compatibleUoms = stockUom
-    ? uoms.filter((u) => u.label !== stockUom.label && (u.base_unit_id ?? u.id) === (stockUom.base_unit_id ?? stockUom.id))
-    : [];
-
   return (
     <div>
       <Link
@@ -363,61 +316,10 @@ export function RecipeDetailPage() {
           </Table>
         </div>
 
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="flex w-40 flex-col gap-1 text-[13px] font-medium">Ingredient type
-            <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={source} onChange={(e) => setSource(e.target.value as "stock" | "sub_recipe")}>
-              <option value="stock">Stock item</option>
-              <option value="sub_recipe">Sub-recipe</option>
-            </select>
-          </label>
-          {source === "stock" ? (
-            <>
-              <label className="flex min-w-[200px] flex-1 flex-col gap-1 text-[13px] font-medium">Stock item
-                <select ref={stockPickerRef} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                  value={ing.food_inventory_id} onChange={(e) => setIng((s) => ({ ...s, food_inventory_id: e.target.value }))}>
-                  <option value="">Select stock item…</option>
-                  {foodInventory?.map((f) => <option key={f.id} value={f.id}>{f.name} (KWD {f.cost.toFixed(3)}/{f.unit})</option>)}
-                </select>
-              </label>
-              <label className="flex w-20 flex-col gap-1 text-[13px] font-medium">Qty
-                <input type="number" step="any" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                  value={ing.qty} onChange={(e) => setIng((s) => ({ ...s, qty: Number(e.target.value) }))} onKeyDown={handleQtyKeyDown} />
-              </label>
-              <label className="flex w-24 flex-col gap-1 text-[13px] font-medium">Unit
-                <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                  value={ing.override_unit_id} onChange={(e) => setIng((s) => ({ ...s, override_unit_id: e.target.value }))}>
-                  <option value="">{selectedStock?.unit ?? "unit"} (default)</option>
-                  {compatibleUoms.map((u) => <option key={u.id} value={u.id}>{u.label}</option>)}
-                </select>
-              </label>
-            </>
-          ) : (
-            <>
-              <label className="flex min-w-[200px] flex-1 flex-col gap-1 text-[13px] font-medium">Sub-recipe
-                <select ref={subRecipePickerRef} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                  value={ing.sub_recipe_id} onChange={(e) => setIng((s) => ({ ...s, sub_recipe_id: e.target.value }))}>
-                  <option value="">Select recipe…</option>
-                  {subRecipeOptions.map((r) => (
-                    <option key={r.id} value={r.id}>{r.name} (KWD {r.cost.total_cost.toFixed(3)}/{r.cost.final_yield_g}g)</option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex w-24 flex-col gap-1 text-[13px] font-medium">Qty (g)
-                <input type="number" step="any" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-                  value={ing.qty} onChange={(e) => setIng((s) => ({ ...s, qty: Number(e.target.value) }))} onKeyDown={handleQtyKeyDown} />
-              </label>
-            </>
-          )}
-          <label className="flex w-20 flex-col gap-1 text-[13px] font-medium">Yield %
-            <input type="number" min={1} max={100} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-              value={ing.yield_pct} onChange={(e) => setIng((s) => ({ ...s, yield_pct: Number(e.target.value) }))} onKeyDown={handleQtyKeyDown} />
-          </label>
-          <Button variant="secondary" onClick={addIngredient}
-            disabled={save.isPending || (source === "stock" ? !ing.food_inventory_id : !ing.sub_recipe_id)}>
-            + Add
-          </Button>
-        </div>
+        <IngredientAdder
+          ref={adderRef} foodInventory={foodInventory} uoms={uoms} subRecipeOptions={subRecipeOptions}
+          onAdd={addIngredient} disabled={save.isPending} onPendingChange={setPendingIngredient}
+        />
         {error && (
           <div className="rounded-lg px-3 py-2 text-[12.5px]" style={{ background: "var(--status-critical-bg)", color: "var(--status-critical)" }}>
             {error}
@@ -530,9 +432,16 @@ function EditableTile({
 export function NewRecipePage() {
   const navigate = useNavigate();
   const create = useCreate<Recipe>("recipes", "/kitchen/recipes");
+  const { data: foodInventory } = useList<FoodInventoryItem>("food-inventory", "/kitchen/food-inventory");
+  const { data: uomsRaw } = useList<UnitOfMeasureEntry>("units-of-measure", "/units-of-measure");
+  const { data: allRecipes } = useList<Recipe>("recipes", "/kitchen/recipes");
+  const uoms = [...(uomsRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
+  const subRecipeOptions = [...(allRecipes ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+  const [ingredients, setIngredients] = useState<IngredientPayload[]>([]);
+  const adderRef = useRef<IngredientAdderHandle>(null);
   const [form, setForm] = useState({
     name: "", category: "Dinner",
-    allergens: "", method: "", notes: "",
+    allergens: "", cooking_method: "", method: "", notes: "",
     // Deliberately empty: the chef states how many portions the recipe makes.
     portions: "", customSize: false, portion_size_g: "",
   });
@@ -541,14 +450,18 @@ export function NewRecipePage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    // An ingredient filled in but not yet added is added rather than lost.
+    const justAdded = adderRef.current?.commit();
+    const all = justAdded ? [...ingredients, justAdded] : ingredients;
     try {
       const { customSize, portion_size_g, portions, ...rest } = form;
       const created = await create.mutateAsync({
         ...rest,
+        cooking_method: rest.cooking_method || null,
         portions: Number(portions),
         portion_size_g: customSize ? Number(portion_size_g) : null,
         allergens: form.allergens ? form.allergens.split(",").map((s) => s.trim()).filter(Boolean) : [],
-        ingredients: [],
+        ingredients: all,
       } as never);
       navigate(`/kitchen/recipes/${created.id}`);
     } catch (err: unknown) {
@@ -560,7 +473,7 @@ export function NewRecipePage() {
     <div>
       <Link to="/kitchen" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Kitchen</Link>
       <PageHeader title="New recipe" />
-      <form onSubmit={onSubmit} className="flex flex-col gap-3 max-w-2xl">
+      <form onSubmit={onSubmit} className="flex flex-col gap-3 max-w-4xl">
         <label className="flex flex-col gap-1 text-[13px] font-medium">Recipe name
           <input required className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
             value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} />
@@ -605,6 +518,10 @@ export function NewRecipePage() {
             </label>
           )}
         </div>
+        <label className="flex max-w-xs flex-col gap-1 text-[13px] font-medium">Cooking method
+          <input placeholder="e.g. Grill, Braise, Bake" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+            value={form.cooking_method} onChange={(e) => setForm((s) => ({ ...s, cooking_method: e.target.value }))} />
+        </label>
         <label className="flex flex-col gap-1 text-[13px] font-medium">Preparation method
           <textarea placeholder="Mise en place & preparation steps" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
             value={form.method} onChange={(e) => setForm((s) => ({ ...s, method: e.target.value }))} />
@@ -613,17 +530,52 @@ export function NewRecipePage() {
           <textarea placeholder="Optional notes for kitchen staff" className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
             value={form.notes} onChange={(e) => setForm((s) => ({ ...s, notes: e.target.value }))} />
         </label>
-        <p className="text-[12px]" style={{ color: "var(--ink-400)" }}>
-          On the next screen: add raw material line items (item, qty, unit, cost, yield) — raw yield is calculated
-          automatically from those quantities. Then set preparation loss (or the after-cook weight directly); portion size can be
-          adjusted there too.
-        </p>
+        <div className="flex flex-col gap-2">
+          <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--ink-400)" }}>Ingredients / line items</div>
+          {ingredients.length > 0 && (
+            <Table>
+              <thead><tr><Th>Ingredient</Th><Th>Qty</Th><Th>Unit</Th><Th>Yield %</Th><Th>{" "}</Th></tr></thead>
+              <tbody>
+                {ingredients.map((i, idx) => {
+                  const stock = foodInventory?.find((f) => f.id === i.food_inventory_id);
+                  const sub = allRecipes?.find((r) => r.id === i.sub_recipe_id);
+                  const unit = i.sub_recipe_id ? "g" : uoms.find((u) => u.id === i.override_unit_id)?.label ?? stock?.unit ?? "";
+                  return (
+                    <tr key={idx}>
+                      <Td className="font-medium">
+                        {stock?.name ?? sub?.name ?? "—"}
+                        {sub && <span className="ml-2"><Badge tone="info">Sub-recipe</Badge></span>}
+                      </Td>
+                      <Td>{i.qty}</Td>
+                      <Td>{unit}</Td>
+                      <Td>{i.yield_pct}%</Td>
+                      <Td>
+                        <button type="button" className="text-xs font-semibold" style={{ color: "var(--status-critical)" }}
+                          onClick={() => setIngredients((list) => list.filter((_, n) => n !== idx))}>
+                          Remove
+                        </button>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          )}
+          <IngredientAdder
+            ref={adderRef} foodInventory={foodInventory} uoms={uoms} subRecipeOptions={subRecipeOptions}
+            onAdd={(ing) => setIngredients((list) => [...list, ing])}
+          />
+          <p className="text-[12px]" style={{ color: "var(--ink-400)" }}>
+            Raw yield and cost are worked out from these quantities when you save. Prep loss and after-cook weight can be set on
+            the recipe page afterwards; recipes made from other recipes use the Sub-recipe type (quantity in grams).
+          </p>
+        </div>
         {error && (
           <div className="rounded-lg px-3 py-2 text-[12.5px]" style={{ background: "var(--status-critical-bg)", color: "var(--status-critical)" }}>
             {error}
           </div>
         )}
-        <Button type="submit" disabled={create.isPending}>{create.isPending ? "Saving..." : "Save Recipe & Add Ingredients"}</Button>
+        <Button type="submit" disabled={create.isPending}>{create.isPending ? "Saving..." : "Save recipe"}</Button>
       </form>
     </div>
   );
