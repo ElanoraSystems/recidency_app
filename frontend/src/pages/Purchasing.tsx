@@ -26,7 +26,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-const TABS = ["Purchase Requests", "Purchase Orders", "Goods Received", "Shopping Basket", "Spend", "Price Comparison", "Suppliers", "Credit Notes"] as const;
+const TABS = ["Purchase Requests", "Templates", "Purchase Orders", "Goods Received", "Shopping Basket", "Spend", "Price Comparison", "Suppliers", "Credit Notes"] as const;
 
 export function Purchasing() {
   const [params, setParams] = useSearchParams();
@@ -69,6 +69,7 @@ export function Purchasing() {
       </div>
 
       {tab === "Purchase Requests" && <RequestsTab />}
+      {tab === "Templates" && <TemplatesTab />}
       {tab === "Purchase Orders" && <OrdersTab />}
       {tab === "Goods Received" && <GoodsReceivedTab />}
       {tab === "Shopping Basket" && <ShoppingBasketTab />}
@@ -76,6 +77,56 @@ export function Purchasing() {
       {tab === "Price Comparison" && <PriceComparisonTab />}
       {tab === "Suppliers" && <SuppliersTab />}
       {tab === "Credit Notes" && <CreditNotesTab />}
+    </div>
+  );
+}
+
+// Saved item lists for purchase requests. Opening one starts a new request
+// with its items and empty quantities; editing happens on that page.
+function TemplatesTab() {
+  const { data, isLoading } = useList<PrTemplate>("pr-templates", "/purchasing/pr-templates");
+  const qc = useQueryClient();
+  const remove = useMutation({
+    mutationFn: async (id: string) => api.delete(`/purchasing/pr-templates/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pr-templates"] }),
+  });
+  if (isLoading) return <Spinner />;
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-[13px]" style={{ color: "var(--ink-500)" }}>
+          A template is a saved list of items. Open one to make a request: enter quantities only, and just the items with a quantity are requested.
+          Change a template's items on that page and press "Update template".
+        </p>
+        <Link to="/purchasing/requests/new"><Button>+ New template</Button></Link>
+      </div>
+      {!data?.length ? (
+        <EmptyState label="No templates yet. Start a new request, add your usual items, name it and press “Save as new template”." />
+      ) : (
+        <Table>
+          <thead><tr><Th>Template</Th><Th>Items</Th><Th>{" "}</Th></tr></thead>
+          <tbody>
+            {data.map((t) => (
+              <tr key={t.id}>
+                <Td className="font-semibold">{t.name}</Td>
+                <Td>
+                  <span className="font-semibold">{t.lines.length}</span>
+                  <span className="ml-2 text-[12px]" style={{ color: "var(--ink-400)" }}>
+                    {t.lines.slice(0, 4).map((l) => l.item_name).join(", ")}{t.lines.length > 4 ? "…" : ""}
+                  </span>
+                </Td>
+                <Td>
+                  <div className="flex gap-3">
+                    <Link to={`/purchasing/requests/new?template=${t.id}`} className="text-xs font-semibold" style={{ color: "var(--brass-600)" }}>Create request / edit</Link>
+                    <button className="text-xs font-semibold" style={{ color: "var(--status-critical)" }}
+                      onClick={() => window.confirm(`Delete the template "${t.name}"?`) && remove.mutate(t.id)}>Delete</button>
+                  </div>
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
     </div>
   );
 }
@@ -243,6 +294,7 @@ export function NewPurchaseRequestPage() {
     enabled: !!id,
   });
   const { data: templates } = useList<PrTemplate>("pr-templates", "/purchasing/pr-templates");
+  const [searchParams] = useSearchParams();
   const [templateId, setTemplateId] = useState("");
   const [tplName, setTplName] = useState("");
   const [edits, setEdits] = useState<Partial<RequestForm> | null>(null);
@@ -294,6 +346,13 @@ export function NewPurchaseRequestPage() {
     patch({ lines: t.lines.map((l) => ({ key: crypto.randomUUID(), itemRef: l.item_master_id, qty: 0, description: l.description ?? "" })) });
   }
 
+  // Arriving from the Templates tab (?template=id) opens that template once.
+  const wanted = isNew ? searchParams.get("template") : null;
+  useEffect(() => {
+    if (wanted && !templateId && templates?.some((t) => t.id === wanted)) loadTemplate(wanted);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wanted, templates]);
+
   async function saveTemplate(asNew: boolean) {
     setError(null);
     const lines = form.lines.filter((l) => l.itemRef).map((l) => ({ item_master_id: l.itemRef, description: l.description || null }));
@@ -318,6 +377,7 @@ export function NewPurchaseRequestPage() {
       qc.invalidateQueries({ queryKey: ["pr-templates"] });
       setTemplateId("");
       setTplName("");
+      navigate("/purchasing/requests/new", { replace: true });
     } catch (err) {
       setError(errorText(err));
     }
