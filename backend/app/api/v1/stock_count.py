@@ -1,9 +1,10 @@
 import uuid
 from datetime import date
+from datetime import date as DateType
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import local_today
@@ -12,6 +13,7 @@ from app.crud.activity import log_activity
 from app.db.session import get_db
 from app.models.kitchen import CostCenter, FoodInventory
 from app.models.purchasing import Inventory, ItemMaster, StockCount, StockCountLine
+from app.models.stock import StockMovement
 from app.models.user import User
 from app.services import stock
 from app.services.cos import record_cost_of_sales
@@ -23,11 +25,25 @@ DEFAULT_LOCATION = "Main Store"
 
 
 async def _book_qty_and_cost(
-    db: AsyncSession, stock_type: str, stock_id: uuid.UUID, cc_id: uuid.UUID
+    db: AsyncSession, stock_type: str, stock_id: uuid.UUID, cc_id: uuid.UUID, as_of: date
 ) -> tuple[float, float]:
-    """Book qty is the balance at the counted location; cost is the item's
-    current weighted cost."""
-    qty = await stock.balance(db, stock_type, stock_id, cc_id)
+    """Book qty is what the ledger says the counted location held on the count
+    date (so a count for last month-end isn't muddied by later movements); cost
+    is the item's current weighted cost."""
+    net = case((StockMovement.to_cost_center_id == cc_id, StockMovement.qty), else_=0) - case(
+        (StockMovement.from_cost_center_id == cc_id, StockMovement.qty), else_=0
+    )
+    qty = float(
+        (
+            await db.execute(
+                select(func.coalesce(func.sum(net), 0)).where(
+                    StockMovement.stock_type == stock_type, StockMovement.stock_id == stock_id,
+                    StockMovement.posting_date <= as_of,
+                    (StockMovement.to_cost_center_id == cc_id) | (StockMovement.from_cost_center_id == cc_id),
+                )
+            )
+        ).scalar_one()
+    )
     if stock_type == "food":
         row = await db.get(FoodInventory, stock_id)
         return (qty, float(row.cost)) if row else (0.0, 0.0)
@@ -67,6 +83,17 @@ class StockCountSummary(BaseModel):
 
 class StockCountIn(BaseModel):
     cost_center_id: uuid.UUID | None = None
+    date: DateType | None = None  # the count date; defaults to today, never in the future
+
+
+class StockCountDateIn(BaseModel):
+    date: DateType
+
+
+def _valid_count_date(d: date) -> date:
+    if d > local_today():
+        raise HTTPException(400, "The count date cannot be in the future")
+    return d
 
 
 async def _line_out(db: AsyncSession, line: StockCountLine, item: ItemMaster | None = None) -> StockCountLineOut:
@@ -115,16 +142,42 @@ async def create_stock_count(
         cc_id = (await db.execute(select(CostCenter.id).where(CostCenter.label == DEFAULT_LOCATION))).scalar_one_or_none()
     if cc_id is None or not await db.get(CostCenter, cc_id):
         raise HTTPException(400, "Select a cost center to count")
-    count = StockCount(date=local_today(), status="Draft", counted_by=user.id, cost_center_id=cc_id)
+    count_date = _valid_count_date(payload.date if payload and payload.date else local_today())
+    await stock.ensure_period_open(db, count_date)
+    count = StockCount(date=count_date, status="Draft", counted_by=user.id, cost_center_id=cc_id)
     db.add(count)
     await db.flush()
 
     items = (await db.execute(select(ItemMaster).where(ItemMaster.active))).scalars().all()
     for item in items:
-        qty, cost = await _book_qty_and_cost(db, item.stock_type, item.stock_id, cc_id)
+        qty, cost = await _book_qty_and_cost(db, item.stock_type, item.stock_id, cc_id, count_date)
         db.add(StockCountLine(count_id=count.id, item_master_id=item.id, book_qty=qty, unit_cost=cost))
 
     await log_activity(db, user, "Started stock count", f"{len(items)} items")
+    await db.commit()
+    await db.refresh(count)
+    return await _count_out(db, count)
+
+
+@router.patch("/{count_id}", response_model=StockCountOut)
+async def set_stock_count_date(
+    count_id: uuid.UUID, payload: StockCountDateIn, db: AsyncSession = Depends(get_db),
+    _user: User = Depends(inventory_access),
+):
+    """Moves a Draft count to another date and re-takes every book quantity as
+    at that date (counted quantities are kept)."""
+    count = await db.get(StockCount, count_id)
+    if not count:
+        raise HTTPException(404, "Stock count not found")
+    if count.status != "Draft":
+        raise HTTPException(400, "Only a Draft count can be changed")
+    count.date = _valid_count_date(payload.date)
+    await stock.ensure_period_open(db, count.date)
+    lines = (await db.execute(select(StockCountLine).where(StockCountLine.count_id == count_id))).scalars().all()
+    for line in lines:
+        item = await db.get(ItemMaster, line.item_master_id)
+        if item:
+            line.book_qty, line.unit_cost = await _book_qty_and_cost(db, item.stock_type, item.stock_id, count.cost_center_id, count.date)
     await db.commit()
     await db.refresh(count)
     return await _count_out(db, count)

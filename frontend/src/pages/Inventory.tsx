@@ -5,8 +5,9 @@ import { api } from "../api/client";
 import { useList, useUpdate } from "../api/hooks";
 import { createDraftRequest } from "./Purchasing";
 import { BalancesTab, CostOfSalesTab, LocationBreakdown, MovementsTab } from "../components/StockLedger";
+import { errorText } from "../components/Workflow";
 import { Badge, Button, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th } from "../components/ui";
-import { fmtDate } from "../lib/date";
+import { fmtDate, todayIso } from "../lib/date";
 import type { CostCenter, FoodInventoryItem, InventoryItem, ItemMasterEntry, ItemMasterTransaction, StockCountDetail, StockCountSummary, Supplier, UnitOfMeasureEntry } from "../types";
 
 // Unified view over general (Inventory) and food (FoodInventory) stock rows
@@ -538,10 +539,11 @@ function StockCountTab() {
   const { data, isLoading } = useList<StockCountSummary>("stock-counts", "/stock-counts");
   const { data: costCenters } = useList<CostCenter>("cost-centers", "/kitchen/cost-centers");
   const [costCenterId, setCostCenterId] = useState("");
+  const [countDate, setCountDate] = useState(todayIso());
   const mainStoreId = costCenters?.find((c) => c.label === "Main Store")?.id ?? "";
   const create = useMutation({
     mutationFn: async () =>
-      (await api.post("/stock-counts", { cost_center_id: costCenterId || mainStoreId || null })).data as StockCountDetail,
+      (await api.post("/stock-counts", { cost_center_id: costCenterId || mainStoreId || null, date: countDate || todayIso() })).data as StockCountDetail,
     onSuccess: (count) => {
       qc.invalidateQueries({ queryKey: ["stock-counts"] });
       navigate(`/inventory/counts/${count.id}`);
@@ -564,6 +566,12 @@ function StockCountTab() {
           >
             {costCenters?.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
+          <label className="flex items-center gap-1.5 text-[13px]">Count date
+            <input
+              type="date" value={countDate} max={todayIso()} onChange={(e) => setCountDate(e.target.value)}
+              className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
+            />
+          </label>
           <Button onClick={() => create.mutate()} disabled={create.isPending}>
             {create.isPending ? "Starting..." : "+ New Count"}
           </Button>
@@ -620,6 +628,15 @@ export function StockCountEntryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count]);
 
+  // A Draft's date can be moved; the book quantities are then re-taken as at that date.
+  const setDate = useMutation({
+    mutationFn: async (date: string) => api.patch(`/stock-counts/${countId}`, { date }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["stock-count", countId] });
+      qc.invalidateQueries({ queryKey: ["stock-counts"] });
+    },
+  });
+
   const saveLine = useMutation({
     mutationFn: async ({ lineId, value }: { lineId: string; value: string }) =>
       api.patch(`/stock-counts/${countId}/lines/${lineId}`, { counted_qty: value === "" ? null : Number(value) }),
@@ -649,6 +666,21 @@ export function StockCountEntryPage() {
         title={`Stock count — ${count.cost_center ?? "Main Store"} — ${count.date}`}
         subtitle={count.status === "Submitted" ? "Submitted — read only." : "Enter the counted quantity for each item. Leave blank to skip an item."}
       />
+      {count.status === "Draft" && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 text-[13px]">
+          <label className="flex items-center gap-1.5 font-medium">Count date
+            <input
+              type="date" value={count.date} max={todayIso()} disabled={setDate.isPending}
+              onChange={(e) => e.target.value && setDate.mutate(e.target.value)}
+              className="rounded-lg border px-2.5 py-1.5 text-sm" style={{ borderColor: "var(--border-strong)" }}
+            />
+          </label>
+          <span style={{ color: "var(--ink-500)" }}>
+            Book quantities are what the location held on this date. The count's consumption cost is filed under this date's month.
+          </span>
+          {setDate.isError && <span style={{ color: "var(--status-critical)" }}>{errorText(setDate.error)}</span>}
+        </div>
+      )}
       <Table>
         <thead><tr><Th>Item</Th><Th>Book Qty</Th><Th>Counted Qty</Th><Th>Variance</Th></tr></thead>
         <tbody>
