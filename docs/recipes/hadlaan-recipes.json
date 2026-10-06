@@ -1,0 +1,4079 @@
+{
+ "recipes": [
+  {
+   "name": "Gluten-Free Dumpling Dough",
+   "category": "Special Meals",
+   "cooking_method": "Steam",
+   "portions": 32,
+   "portion_size_g": 12,
+   "ingredients": [
+    {
+     "item": "Fine rice flour",
+     "qty": 115,
+     "unit": "g"
+    },
+    {
+     "item": "Tapioca starch",
+     "qty": 65,
+     "unit": "g"
+    },
+    {
+     "item": "Glutinous rice flour",
+     "qty": 27,
+     "unit": "g"
+    },
+    {
+     "item": "Neutral oil",
+     "qty": 10,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the fine rice flour and tapioca starch thoroughly in a mixing bowl.",
+    "2. Bring the water to a full boil. Immediately pour the 174 g boiling water over the flour mixture.",
+    "3. Mix vigorously with a spatula or wooden spoon until the mixture comes together into a crumbly dough.",
+    "4. Add the glutinous rice flour and vegetable oil.",
+    "5. Once cool enough to handle, knead by hand until the dough becomes smooth, soft and pliable, approximately 3–5 minutes.",
+    "6. Cover the dough immediately with cling film or a damp cloth. Gluten-free dumpling dough dries very quickly, so keep it covered throughout production.",
+    "7. Divide into 32 equal portions, approximately 12 g each.",
+    "8. Roll each portion into a ball and keep covered.",
+    "9. Lightly dust the work surface with fine rice flour. Flatten each ball and roll into a thin round wrapper, approximately 8–9 cm diameter.",
+    "10. Keep the centre slightly thicker than the edges to provide strength around the filling.",
+    "11. Fill immediately with the desired dumpling filling and seal firmly.",
+    "12. Keep the finished dumplings covered until cooking.",
+    "",
+    "Steaming: Arrange the dumplings in a lightly oiled steamer basket or on perforated baking paper, leaving space between each one. Steam over simmering water for approximately 7–9 minutes, depending on the size and filling. Serve immediately with dipping sauce and chilli oil."
+   ],
+   "notes": [
+    "Yield: 32 dumpling wrappers.",
+    "Chef's Note: Despite its name, glutinous rice flour contains no gluten. \"Glutinous\" refers to its sticky texture when cooked.",
+    "Not costed: boiling water 174 g; fine rice flour as required for dusting."
+   ]
+  },
+  {
+   "name": "Golden Pasta Dough",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "00 flour",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Fine semolina",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Egg yolks",
+     "qty": 175,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 5,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the 00 flour and fine semolina thoroughly.",
+    "2. Mix the egg yolks with the salt.",
+    "3. Gradually incorporate the egg yolks into the flour mixture until a rough, compact dough forms.",
+    "4. Bring the dough together and knead briefly. Do not overwork it.",
+    "5. Wrap tightly and rest for 10 minutes.",
+    "6. Knead again until the dough is smooth, homogeneous and elastic.",
+    "7. Wrap tightly and rest for a minimum of 30 minutes before rolling.",
+    "8. Roll to the required thickness and use immediately for the desired fresh pasta."
+   ],
+   "notes": [
+    "Chef's Note: The initial 10-minute rest allows the moisture from the egg yolks to distribute evenly through the flour. This makes the second kneading considerably easier and produces a smoother dough.",
+    "Do not knead pasta dough as aggressively as bread dough. The objective is to develop enough gluten structure to hold the pasta's shape while keeping the dough supple and workable.",
+    "No yield was given in the source; costed as 1 batch (380 g)."
+   ]
+  },
+  {
+   "name": "Tangzhong",
+   "category": "Special Meals",
+   "cooking_method": "Cook",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Bread flour",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Whole milk",
+     "qty": 250,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "Combine flour and milk in a saucepan. Cook over medium-low heat, whisking continuously, until it thickens to approximately 65°C.",
+    "It should resemble a smooth pastry cream.",
+    "Transfer to a container, cover directly on the surface and cool completely."
+   ],
+   "notes": [
+    "Used in Japanese Milk Bread (Shokupan)."
+   ]
+  },
+  {
+   "name": "Japanese Milk Bread (Shokupan) for Egg Sando",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 2,
+   "ingredients": [
+    {
+     "recipe": "Tangzhong",
+     "qty": 300
+    },
+    {
+     "item": "Bread flour",
+     "qty": 950,
+     "unit": "g"
+    },
+    {
+     "item": "Whole milk",
+     "qty": 380,
+     "unit": "g"
+    },
+    {
+     "item": "Whole egg",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 90,
+     "unit": "g"
+    },
+    {
+     "item": "Milk powder",
+     "qty": 40,
+     "unit": "g"
+    },
+    {
+     "item": "Instant dry yeast",
+     "qty": 12,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 18,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 100,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "Dough",
+    "Place flour, sugar, milk powder and yeast into the mixer.",
+    "Add cold milk, eggs and cooled tangzhong.",
+    "Mix with dough hook on low speed for 4 minutes.",
+    "Add salt and continue mixing for 3 minutes.",
+    "Gradually incorporate the soft butter.",
+    "Mix on medium speed for approximately 8–10 minutes, until the dough is extremely smooth, elastic and reaches a strong windowpane.",
+    "Target final dough temperature: 25–27°C.",
+    "",
+    "First Fermentation",
+    "Place into a lightly greased container.",
+    "Cover and ferment at 26–28°C for approximately 60–75 minutes, or until almost doubled.",
+    "",
+    "Shaping",
+    "Divide into 6 × approximately 330 g portions.",
+    "Round lightly and rest for 15 minutes.",
+    "Roll each portion into a rectangle, fold the sides inward and roll tightly into a cylinder.",
+    "Place 3 rolls per Pullman tin, seam side down.",
+    "",
+    "Final Proof",
+    "Proof at approximately 28–30°C, ideally around 75–80% humidity.",
+    "For a square sandwich loaf with the lid fitted, proof until the dough reaches approximately 80% of the tin height.",
+    "Close the lid.",
+    "",
+    "Baking",
+    "Bake at 175°C convection or 185°C deck/static oven. Approximately 28–35 minutes.",
+    "Core temperature: 93–95°C.",
+    "Immediately remove from the tins and cool completely on racks."
+   ],
+   "notes": [
+    "Yield: 2 loaves, approximately 850–900 g each. Recommended tin: Pullman loaf tin, approximately 25 × 10 × 10 cm.",
+    "For Egg Sando: For the best texture, bake the bread the day before service and keep it well wrapped once completely cool. Slice 18–20 mm thick. Remove the crusts after slicing for the classic Japanese presentation.",
+    "This formula gives you a very white, fine, feathery crumb with enough strength to hold the egg filling without becoming wet or collapsing."
+   ]
+  },
+  {
+   "name": "Japanese Soufflé Pancakes",
+   "category": "Special Meals",
+   "cooking_method": "Pan, covered",
+   "portions": 3,
+   "ingredients": [
+    {
+     "item": "Egg yolks",
+     "qty": 36,
+     "unit": "g"
+    },
+    {
+     "item": "Whole milk",
+     "qty": 20,
+     "unit": "g"
+    },
+    {
+     "item": "Vanilla",
+     "qty": 3,
+     "unit": "g"
+    },
+    {
+     "item": "Cake flour",
+     "qty": 30,
+     "unit": "g"
+    },
+    {
+     "item": "Baking powder",
+     "qty": 2,
+     "unit": "g"
+    },
+    {
+     "item": "Egg whites",
+     "qty": 90,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 90,
+     "unit": "g"
+    },
+    {
+     "item": "Cream of tartar",
+     "qty": 1,
+     "unit": "g"
+    },
+    {
+     "item": "Xanthan gum",
+     "qty": 4,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "Yolk batter: 2 egg yolks, 20 g whole milk, 3 g vanilla, 30 g cake flour, 2 g baking powder.",
+    "Meringue: 3 egg whites (approximately 90 g), 90 g caster sugar, 1 g cream of tartar, 4 g xanthan gum.",
+    "Whip the whites until foamy, add cream of tartar and xanthan, then introduce the sugar (118 degree). Stop at glossy medium-stiff peaks where the tip stands but bends slightly.",
+    "Fold about 1/3 of the meringue into the yolk batter to lighten it, then very gently fold in the remainder.",
+    "Cook at approximately 130–140°C pan-surface temperature, covered, for roughly 5–6 minutes on the first side and 4–5 minutes after turning. Exact timing depends heavily on thickness.",
+    "They need very low heat and a lid. A few drops of water placed away from the pancakes create steam.",
+    "Pipe or spoon the batter upward in 2–3 additions, allowing the base to begin setting before adding more batter."
+   ],
+   "notes": [
+    "Yield: 3 very tall pancakes (2 egg yolks ≈ 36 g, 3 egg whites ≈ 90 g).",
+    "For Japanese soufflé pancakes, the height does not mainly come from baking powder. It comes from a stable meringue structure + controlled low heat + steam. The egg whites need to be whipped to a firm, glossy medium-stiff peak, not dry stiff peaks. Sugar must be incorporated gradually because it stabilizes the protein network. A little cream of tartar or lemon juice makes the meringue significantly more reliable.",
+    "The yolk mixture should be relatively thick. If there is too much milk, the pancake may rise dramatically and then collapse. Cake flour works particularly well because you want enough starch to set the pancake without making it tough.",
+    "Why they collapse: the most common problem is cooking too quickly. The outside looks finished while the centre is still effectively soufflé foam. They need very low heat and a lid; steam transfers heat gently into the upper portion and allows the centre to set before the exterior becomes too dark.",
+    "The single biggest improvement is less liquid, properly stabilized meringue, and much slower cooking.",
+    "Source check: xanthan gum is 4 g as written in the source; please confirm against your tested formula."
+   ]
+  },
+  {
+   "name": "Ricotta Gnocchi",
+   "category": "Special Meals",
+   "cooking_method": "Poach",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Fresh ricotta",
+     "qty": 680,
+     "unit": "g"
+    },
+    {
+     "item": "Egg yolks",
+     "qty": 36,
+     "unit": "g"
+    },
+    {
+     "item": "Whole egg",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Pecorino Romano",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Nutmeg",
+     "qty": 1,
+     "unit": "g"
+    },
+    {
+     "item": "00 flour",
+     "qty": 240,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 5,
+     "unit": "g"
+    },
+    {
+     "item": "Black pepper",
+     "qty": 1,
+     "unit": "g"
+    },
+    {
+     "item": "Olive oil",
+     "qty": 30,
+     "unit": "ml"
+    }
+   ],
+   "method": [
+    "1. Drain the ricotta thoroughly to remove as much excess moisture as possible.",
+    "2. Place approximately 180 g of the flour in a large mixing bowl and make a well in the centre.",
+    "3. Add the ricotta, egg yolks and whole egg.",
+    "4. Add the grated Pecorino Romano, nutmeg, salt and black pepper.",
+    "5. Mix gently until the ingredients begin to come together.",
+    "6. Transfer onto a lightly floured work surface. Gradually incorporate the remaining flour only as required to obtain a soft, workable dough. Avoid adding excessive flour.",
+    "7. Knead gently until the dough is smooth and homogeneous. Do not overwork.",
+    "8. Divide the dough and roll into ropes approximately 20 mm in diameter.",
+    "9. Cut into pieces approximately 20 mm long.",
+    "10. Roll each gnocchi lightly over a gnocchi board or the back of a fork to create ridges.",
+    "11. Test one gnocchi in simmering salted water. Adjust the dough with a small amount of additional flour if necessary.",
+    "12. Cook the gnocchi in batches in gently boiling salted water. Once they rise to the surface, continue cooking until tender, approximately 2–4 minutes depending on size.",
+    "13. Remove carefully with a slotted spoon and transfer directly into the prepared sauce.",
+    "14. Finish with the olive oil and additional finely grated Pecorino Romano as required."
+   ],
+   "notes": [
+    "Chef's note: The exact quantity of flour will depend on the moisture content of the ricotta. For lighter gnocchi, keep the flour to the minimum necessary to hold the dough together.",
+    "Flour is approximately 240 g (about 180 g first, the rest as required). Egg yolks: 2 ≈ 36 g. Whole egg: 1 ≈ 50 g.",
+    "No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Pâte Sablée (Vanilla Almond)",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 1,
+   "yield_g": 750,
+   "ingredients": [
+    {
+     "item": "Unsalted butter",
+     "qty": 250,
+     "unit": "g"
+    },
+    {
+     "item": "Icing sugar",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 2,
+     "unit": "g"
+    },
+    {
+     "item": "Whole egg",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Almond powder",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "T55 flour",
+     "qty": 350,
+     "unit": "g"
+    },
+    {
+     "item": "Vanilla paste",
+     "qty": 5,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Cream the softened butter, icing sugar, salt and vanilla gently until smooth. Do not aerate.",
+    "2. Add the egg gradually and mix until fully incorporated.",
+    "3. Add the almond powder.",
+    "4. Add the flour and mix only until the dough comes together. Do not overwork.",
+    "5. Flatten the dough to approximately 20 mm thick, wrap and refrigerate for minimum 2 hours, preferably overnight.",
+    "6. Roll between two sheets of baking paper to 2.5–3 mm thick.",
+    "7. Chill or freeze until firm before cutting or lining tart rings.",
+    "8. For tart shells, line perforated rings and refrigerate for another 30 minutes before baking.",
+    "9. Bake at 160°C fan for approximately 15–20 minutes, depending on size, until evenly golden."
+   ],
+   "notes": [
+    "Yield: approximately 750 g dough. Named \"(Vanilla Almond)\" to keep it apart from the classic Pâte Sablée."
+   ]
+  },
+  {
+   "name": "Japanese Puffed Rice",
+   "category": "Special Meals",
+   "cooking_method": "Deep-fry",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Japanese short-grain rice",
+     "qty": 200,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 2,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Wash the rice thoroughly until the water runs almost clear.",
+    "2. Cook the rice with 240 g water until fully cooked and slightly sticky.",
+    "3. While warm, spread the rice onto a silicone mat or baking paper. Separate the grains as much as possible.",
+    "4. Dehydrate at 60–65°C for 6–8 hours, or overnight, until the grains are completely hard and dry.",
+    "5. Heat neutral oil to 200–210°C.",
+    "6. Fry the dried rice in very small batches for approximately 5–10 seconds. It should puff almost immediately.",
+    "7. Remove immediately with a fine spider and drain on absorbent paper.",
+    "8. Season lightly while still warm.",
+    "9. Once completely cold, store airtight with silica gel/desiccant suitable for food storage."
+   ],
+   "notes": [
+    "Important: The rice must be bone dry before frying. Any remaining moisture reduces the puff and can cause dangerous oil splattering.",
+    "Not costed: water 240 g; neutral frying oil as required. No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Focaccia Bread",
+   "category": "Special Meals",
+   "cooking_method": "Bake (deck oven)",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Flour",
+     "qty": 1000,
+     "unit": "g"
+    },
+    {
+     "item": "Yeast",
+     "qty": 12,
+     "unit": "g"
+    },
+    {
+     "item": "Salt",
+     "qty": 25,
+     "unit": "g"
+    },
+    {
+     "item": "Olive oil",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Dry oregano",
+     "qty": 5,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "All ingredients mix together by hand.",
+    "Keep overnight for best result.",
+    "Next day, or after five hours, put in the tray or ring.",
+    "Keep it to proof, garnish and bake it.",
+    "Baking temperature for deck oven: 220°C, 18 to 22 minutes.",
+    "Remove from the oven and put olive oil on top."
+   ],
+   "notes": [
+    "Water 450 g (or a little more) is not costed. On top for garnish: dry oregano and sea salt; after baking olive oil on top (no quantities given, not costed).",
+    "Source check: oregano was written as \"05gm\" and read as 5 g. Water of 450 g per 1 kg flour is a low hydration for focaccia; please confirm.",
+    "No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Sourdough Brioche",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 11,
+   "portion_size_g": 100,
+   "ingredients": [
+    {
+     "item": "All-purpose flour",
+     "qty": 250,
+     "unit": "g"
+    },
+    {
+     "item": "Bread flour",
+     "qty": 250,
+     "unit": "g"
+    },
+    {
+     "item": "AP instant sourdough",
+     "qty": 1,
+     "unit": "units"
+    },
+    {
+     "item": "Wild yeast instant sourdough",
+     "qty": 1,
+     "unit": "units"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 175,
+     "unit": "g"
+    },
+    {
+     "item": "Whole egg",
+     "qty": 225,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 175,
+     "unit": "g"
+    },
+    {
+     "item": "Salt",
+     "qty": 6,
+     "unit": "g"
+    },
+    {
+     "item": "Honey",
+     "qty": 6,
+     "unit": "g"
+    },
+    {
+     "item": "Lemon zest",
+     "qty": 6,
+     "unit": "g"
+    },
+    {
+     "item": "Vanilla extract",
+     "qty": 1,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Cut the softened butter into small cubes. Keep at room temperature until soft and pliable, but not melted.",
+    "2. Place the all-purpose flour, bread flour, AP instant sourdough, Wild Yeast instant sourdough, sugar, honey, lemon zest and vanilla into the mixer bowl.",
+    "3. In a separate bowl, combine the whole eggs with the cold water.",
+    "4. Add the egg and water mixture to the dry ingredients together with half of the butter (87.5 g). Reserve the remaining butter and the salt.",
+    "5. Using the dough hook, mix on low speed for 2 minutes until the ingredients are incorporated.",
+    "6. Increase to medium speed and mix for 2–3 minutes, until the dough begins to develop and come together.",
+    "7. Rest the dough for 1 minute.",
+    "8. Add the remaining 87.5 g butter gradually, followed by the salt.",
+    "9. Mix on high speed for approximately 10–15 minutes, until the dough is smooth, glossy and elastic. The dough should pull cleanly from the sides of the bowl and slap against the bowl during mixing.",
+    "10. Transfer to a lightly greased container and cover.",
+    "11. Ferment at room temperature for 4–5 hours.",
+    "12. Divide the dough into 100 g portions.",
+    "13. Shape each portion into a tight, smooth ball and arrange in the prepared brioche moulds or loaf tins.",
+    "14. Cover and proof at room temperature for 3–4 hours, or until well risen and light to the touch.",
+    "15. Combine the egg and water for the egg wash. Brush the brioche carefully without deflating the dough.",
+    "16. Bake at 190°C for approximately 35 minutes, until evenly golden brown and fully baked.",
+    "17. Remove from the moulds and cool on a wire rack."
+   ],
+   "notes": [
+    "Final dough: cold water 115 g (not costed). Egg wash: whole egg 50 g + water 10 g; the 50 g egg is included in the whole egg total (175 g dough + 50 g wash = 225 g).",
+    "The two instant sourdough ingredients are 1 tbsp each, entered as 1 unit each. Yield: about 1,160 g of dough = 11 portions of 100 g."
+   ]
+  },
+  {
+   "name": "Egg Yolk Sourdough",
+   "category": "Special Meals",
+   "cooking_method": "Bake (Dutch oven)",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Bread flour",
+     "qty": 500,
+     "unit": "g"
+    },
+    {
+     "item": "Active sourdough starter",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Egg yolks",
+     "qty": 36,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 10,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the water and active sourdough starter until evenly dispersed.",
+    "2. Add the egg yolks and mix thoroughly.",
+    "3. Add the bread flour and salt. Mix until all the flour is hydrated and a rough dough forms.",
+    "4. Cover and rest the dough for 30–60 minutes.",
+    "5. Perform 4 sets of stretch and folds, approximately 1 hour apart. Keep the dough covered between each fold.",
+    "6. After the final fold, continue the bulk fermentation at room temperature until the dough has visibly increased in volume. It should feel light and slightly jiggly, with bubbles visible on the surface and throughout the dough.",
+    "7. Gently turn the dough onto a lightly floured work surface. Pre-shape into a round and rest for 15 minutes.",
+    "8. Shape the dough into the desired boule or batard, maintaining good surface tension without degassing excessively.",
+    "9. Transfer seam-side up into a lightly floured banneton. Cover and refrigerate for approximately 14½ hours.",
+    "",
+    "Baking: Preheat the oven and Dutch oven to 238°C. Turn the cold dough onto baking paper or a bread mat and score immediately. Bake at 238°C for 22 minutes, covered. Remove the lid and continue baking for 16 minutes, or until the crust is deeply golden brown. Transfer to a wire rack and allow to cool completely before slicing."
+   ],
+   "notes": [
+    "Fermentation Guide: Recommended starting dough temperature: approximately 24°C. The original dough gradually cooled to approximately 20°C during bulk fermentation. Use the condition of the dough rather than relying solely on time. The dough should show good volume development, aeration, surface bubbles and a soft, lively texture before shaping.",
+    "Not costed: water 306 g. Egg yolks 36 g ≈ 2 yolks. No yield was given in the source; costed as 1 loaf."
+   ]
+  },
+  {
+   "name": "Pani Puri Shells (Golgappa)",
+   "category": "Special Meals",
+   "cooking_method": "Deep-fry",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Wheat flour",
+     "qty": 125,
+     "unit": "g"
+    },
+    {
+     "item": "Maida flour",
+     "qty": 60,
+     "unit": "g"
+    },
+    {
+     "item": "Fine semolina",
+     "qty": 85,
+     "unit": "g"
+    },
+    {
+     "item": "Baking powder",
+     "qty": 12,
+     "unit": "g"
+    },
+    {
+     "item": "Baking soda",
+     "qty": 3,
+     "unit": "g"
+    },
+    {
+     "item": "Salt",
+     "qty": 18,
+     "unit": "g"
+    },
+    {
+     "item": "Neutral oil",
+     "qty": 15,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the wheat flour, maida and semolina. Mix thoroughly.",
+    "2. Place the water, salt and oil in a saucepan and bring to a full boil.",
+    "3. Add the flour mixture to the boiling liquid. Stir immediately and vigorously until a thick, uniform dough forms.",
+    "4. Continue cooking the dough over low heat for approximately 5 minutes, stirring continuously. This gelatinises the starch and helps create the hollow structure during frying.",
+    "5. Remove from the heat and allow the dough to cool slightly until warm.",
+    "6. Add the baking powder and baking soda. Knead thoroughly until completely incorporated.",
+    "7. Cover and rest for 5 minutes.",
+    "8. Transfer the dough to a clean work surface and knead until smooth, firm and elastic. The dough should not be sticky.",
+    "9. Roll the dough evenly to 1–1.5 mm thickness.",
+    "10. Cut into 30–40 mm discs. Keep the cut discs covered to prevent them from drying before frying.",
+    "11. Heat the frying oil to 180°C.",
+    "12. Fry the discs in small batches. As each disc enters the oil, gently press it beneath the surface with a skimmer to encourage even puffing.",
+    "13. Fry until completely puffed, crisp and evenly golden.",
+    "14. Remove and drain thoroughly.",
+    "15. Allow to cool completely before storing. The finished pani puri should be dry, crisp and completely hollow."
+   ],
+   "notes": [
+    "Chef notes: The dough must be firm rather than soft or sticky. If necessary, adjust the consistency with a very small amount of flour.",
+    "Roll the dough extremely evenly. Uneven thickness is one of the main causes of shells failing to puff.",
+    "Maintain the frying temperature at approximately 180°C. Oil that is too cool can produce heavy, oily shells; excessively hot oil can colour the exterior before the shell has fully expanded.",
+    "Once completely cooled, store immediately in an airtight container to maintain maximum crispness.",
+    "Not costed: water 300 g; neutral frying oil as required. No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Brioche Loaf",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Bread flour",
+     "qty": 330,
+     "unit": "g"
+    },
+    {
+     "item": "Whole egg",
+     "qty": 250,
+     "unit": "g"
+    },
+    {
+     "item": "Whole milk",
+     "qty": 60,
+     "unit": "g"
+    },
+    {
+     "item": "Instant dry yeast",
+     "qty": 6,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 4.5,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 36,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 190,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Place the flour, whole egg, milk, yeast, salt and sugar into the bowl of a stand mixer fitted with a dough hook.",
+    "2. Mix on low speed until all ingredients are incorporated and a rough dough forms.",
+    "3. Increase to medium-low speed and knead until the dough begins to develop strength. The dough will remain soft and sticky at this stage.",
+    "4. Add the softened butter gradually, approximately 20–30 g at a time, allowing each addition to become fully incorporated before adding the next.",
+    "5. Continue kneading until the dough is smooth, glossy and elastic and achieves a full windowpane. Keep the dough temperature below 24°C throughout mixing. If necessary, stop mixing and chill the dough briefly before continuing.",
+    "6. Transfer to a clean bowl, cover and leave to proof at room temperature until approximately doubled in volume.",
+    "7. Brush the inside of the loaf tin, including the lid if using one, with melted butter.",
+    "8. Gently degas the dough and divide into 3 equal pieces of approximately 272 g each.",
+    "9. Shape each piece into a tight ball. Rest briefly if necessary to relax the gluten.",
+    "10. Lightly flour the work surface. Flatten each ball and gently stretch into a rectangular shape.",
+    "11. Roll each piece to approximately 30 cm long. Fold both long sides towards the centre, then roll tightly into a compact log.",
+    "12. Place the three shaped logs evenly into the prepared loaf tin.",
+    "13. Cover and proof at room temperature until well risen. The brioche is ready when gently pressed with a finger and the indentation returns slowly.",
+    "14. Preheat a fan-assisted oven to 180°C.",
+    "15. Brush the surface lightly and evenly with beaten egg.",
+    "16. Bake at 180°C for 30–35 minutes, or until evenly golden and the internal temperature reaches 88°C.",
+    "17. Remove from the oven, gently knock the tin against the work surface to release excess steam, then immediately turn the brioche out onto a cooling rack.",
+    "18. Allow to cool for at least 10 minutes before slicing."
+   ],
+   "notes": [
+    "Yield: 1 loaf, approximately 815 g dough. Tin: 1.5 kg loaf tin.",
+    "Whole egg 250 g = 200 g in the dough + 50 g beaten egg for the egg wash. Unsalted butter 190 g = 180 g in the dough + 10 g melted butter for the tin."
+   ]
+  },
+  {
+   "name": "Crispy Sandwich Bread (Joe & The Juice Style)",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 17,
+   "portion_size_g": 100,
+   "ingredients": [
+    {
+     "item": "Bread flour",
+     "qty": 600,
+     "unit": "g"
+    },
+    {
+     "item": "Whole-wheat flour",
+     "qty": 300,
+     "unit": "g"
+    },
+    {
+     "item": "Fine rye flour",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Fresh yeast",
+     "qty": 20,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 18,
+     "unit": "g"
+    },
+    {
+     "item": "Olive oil",
+     "qty": 30,
+     "unit": "g"
+    },
+    {
+     "item": "Malt syrup",
+     "qty": 15,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the water and yeast.",
+    "2. Add the bread flour, whole-wheat flour and rye flour. Mix on slow speed for 4 minutes.",
+    "3. Add the salt, olive oil and malt syrup.",
+    "4. Knead on medium speed for 6–8 minutes until smooth and moderately developed.",
+    "5. Cover and bulk ferment for 60 minutes at 24–26°C.",
+    "6. Divide into 100 g portions and shape into balls.",
+    "7. Rest, covered, for 20 minutes.",
+    "8. Roll each portion very thinly into an elongated rectangle approximately 28 × 14 cm and 3–4 mm thick.",
+    "9. Dock lightly with a fork to prevent excessive ballooning.",
+    "10. Proof for 20–25 minutes.",
+    "11. Bake at 230°C for approximately 5–7 minutes. The bread should be cooked but remain relatively pale and flexible. Do not bake it until fully crisp at this stage.",
+    "12. Cool completely on a rack."
+   ],
+   "notes": [
+    "THE IMPORTANT PART — TO GET THE JOE & THE JUICE CRUNCH: Build the sandwich using one bread folded or two very thin pieces, depending on your preferred presentation. Brush the outside extremely lightly with olive oil. Place into a commercial contact grill at approximately 210–220°C. Press firmly for 3–5 minutes, until the bread becomes very thin, deeply toasted and exceptionally crisp.",
+    "The combination of thin bread + relatively low moisture + strong compression + high contact heat is more important than the bread recipe itself. That's what produces that characteristic crack when you bite into it.",
+    "Fresh yeast 20 g, or instant dry yeast 7 g. Not costed: water 620 g.",
+    "Source check: the source says 10 breads of about 100 g, but the ingredients make about 1,700 g of dough (about 17 breads of 100 g). Portions set to 17."
+   ]
+  },
+  {
+   "name": "Pâte Brisée (Shortcrust Pastry)",
+   "category": "Special Meals",
+   "cooking_method": "Blind bake",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Flour",
+     "qty": 250,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 125,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 5,
+     "unit": "g"
+    },
+    {
+     "item": "Whole egg",
+     "qty": 50,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Sift the flour into the mixing bowl.",
+    "2. Add the cold butter cut into small cubes.",
+    "3. Rub the butter into the flour until a fine sandy texture is obtained.",
+    "4. Add the salt.",
+    "5. Add the egg and mix briefly.",
+    "6. Gradually add the cold water until the dough just comes together. Do not overwork.",
+    "7. Turn onto the work surface and fraisage the dough once or twice with the heel of the hand.",
+    "8. Flatten into a 2–3 cm thick disc and wrap.",
+    "9. Rest refrigerated at 2–4°C for minimum 1 hour, preferably 2 hours.",
+    "10. Roll to approximately 2.5–3 mm according to intended use.",
+    "11. Line the tart ring or mould without stretching the dough.",
+    "12. Refrigerate for 30 minutes before baking.",
+    "",
+    "Recommended blind baking: 160–170°C until evenly golden."
+   ],
+   "notes": [
+    "Not costed: cold water 50 g. No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Pâte Sucrée (Sweet Almond Tart Pastry)",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Flour",
+     "qty": 250,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Icing sugar",
+     "qty": 95,
+     "unit": "g"
+    },
+    {
+     "item": "Almond powder",
+     "qty": 25,
+     "unit": "g"
+    },
+    {
+     "item": "Whole egg",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 2,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Place the softened butter in the mixing bowl and work until smooth.",
+    "2. Add the icing sugar, almond powder and salt.",
+    "3. Cream gently until homogeneous. Do not aerate excessively.",
+    "4. Gradually incorporate the egg.",
+    "5. Add the sifted flour.",
+    "6. Mix only until the dough comes together. Do not develop the gluten.",
+    "7. Flatten the dough between two sheets of baking paper.",
+    "8. Wrap and refrigerate at 2–4°C for minimum 2 hours.",
+    "9. Roll to approximately 2–2.5 mm.",
+    "10. Line the tart rings carefully and trim cleanly.",
+    "11. Refrigerate or freeze briefly before baking to maintain a sharp shape.",
+    "",
+    "Recommended baking: 155–165°C until evenly golden."
+   ],
+   "notes": [
+    "No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Pâte Sablée (Classic)",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Flour",
+     "qty": 250,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Icing sugar",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Whole egg",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 2,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Place the softened butter, icing sugar and salt in the mixing bowl.",
+    "2. Cream gently with the paddle until completely smooth.",
+    "3. Gradually incorporate the egg.",
+    "4. Add the sifted flour.",
+    "5. Mix on low speed only until the dough comes together.",
+    "6. Do not overwork the dough.",
+    "7. Flatten into a disc approximately 2–3 cm thick and wrap.",
+    "8. Refrigerate at 2–4°C for minimum 2 hours.",
+    "9. Roll between baking paper to approximately 2.5–3 mm.",
+    "10. Line the tart rings without stretching.",
+    "11. Refrigerate for at least 30 minutes before baking.",
+    "",
+    "Recommended baking: 160–170°C until light golden and crisp."
+   ],
+   "notes": [
+    "No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Pâte à Choux (Choux Pastry)",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Whole milk",
+     "qty": 125,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 5,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 10,
+     "unit": "g"
+    },
+    {
+     "item": "Flour",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Whole egg",
+     "qty": 250,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Place the water, milk, butter, salt and sugar in a saucepan.",
+    "2. Bring to a full boil, ensuring the butter has completely melted.",
+    "3. Remove briefly from the heat and add the sifted flour in one addition.",
+    "4. Mix vigorously until completely homogeneous.",
+    "5. Return to medium heat and dry the panade for approximately 1–2 minutes.",
+    "6. Continue until the dough forms a smooth ball and a thin film develops on the base of the saucepan.",
+    "7. Transfer immediately to the mixer fitted with the paddle.",
+    "8. Mix briefly to release excess steam.",
+    "9. Gradually incorporate the beaten egg in several additions.",
+    "10. Check the consistency before adding all the egg. The exact quantity can vary according to flour absorption and how much the panade was dried.",
+    "11. The finished choux paste should be smooth, glossy and form a flexible V-shape when falling from the paddle.",
+    "12. Pipe immediately to the required size.",
+    "13. Bake without opening the oven during the initial baking stage.",
+    "",
+    "Recommended baking: approximately 170–180°C, adjusted according to size and oven."
+   ],
+   "notes": [
+    "Critical point: The 250 g egg is approximate. Consistency determines the final quantity.",
+    "Not costed: water 125 g. No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Pâte Feuilletée (Classic Puff Pastry)",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Flour",
+     "qty": 250,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 5,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 25,
+     "unit": "g"
+    },
+    {
+     "item": "Tourage butter",
+     "qty": 150,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Dissolve the salt in the cold water.",
+    "2. Combine the flour, water and 25 g butter.",
+    "3. Mix only until a homogeneous dough forms. Do not overdevelop the gluten.",
+    "4. Shape the détrempe into a neat rectangle.",
+    "5. Wrap and refrigerate at 2–4°C for approximately 1 hour.",
+    "6. Shape the tourage butter into an even rectangular block.",
+    "7. Ensure the détrempe and butter have a similar workable consistency before laminating.",
+    "8. Roll the détrempe and enclose the butter completely.",
+    "9. Roll lengthways while maintaining straight edges and even thickness.",
+    "10. Perform the first fold.",
+    "11. Rotate the dough 90°, roll again and continue according to the selected folding method.",
+    "12. Refrigerate whenever the butter becomes too soft or the dough begins to resist rolling.",
+    "13. Complete either 6 single turns or 3 double turns.",
+    "14. Rest refrigerated for at least 1–2 hours after the final turn before using.",
+    "15. Roll to the required thickness without crushing the laminated layers.",
+    "16. Cut with a sharp knife and avoid compressing the edges.",
+    "",
+    "Recommended baking: generally 190–210°C, depending on the finished product."
+   ],
+   "notes": [
+    "Critical point: Keep the butter and détrempe at compatible consistency throughout lamination. The butter must be pliable but cold; if it melts into the dough, the layers will be lost.",
+    "Détrempe: flour 250 g, cold water 125 g (not costed), salt 5 g, softened butter 25 g. Tourage: dry butter 150 g. No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Date & Almond Cups",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Medjool dates",
+     "qty": 200,
+     "unit": "g"
+    },
+    {
+     "item": "Roasted almonds",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "White sesame seeds",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Cardamom powder",
+     "qty": 0.5,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 1,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Place the pitted Medjool dates and roasted almonds into a food processor.",
+    "2. Process until finely chopped and the mixture becomes sticky and holds together when pressed.",
+    "3. Add the cardamom powder and salt. Process briefly to combine.",
+    "4. Divide into equal portions.",
+    "5. Roll each portion into a ball and coat lightly with the toasted sesame seeds.",
+    "6. Press each portion into a small silicone or ring mould, forming an even cup with a hollow centre.",
+    "7. Refrigerate until firm."
+   ],
+   "notes": [
+    "Medjool dates, pitted. Almonds, roasted. White sesame seeds, toasted. No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Saffron Pistachio Filling",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Pistachio paste",
+     "qty": 80,
+     "unit": "g"
+    },
+    {
+     "item": "White chocolate",
+     "qty": 60,
+     "unit": "g"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 60,
+     "unit": "g"
+    },
+    {
+     "item": "Whole milk",
+     "qty": 15,
+     "unit": "g"
+    },
+    {
+     "item": "Saffron threads",
+     "qty": 0.15,
+     "unit": "g"
+    },
+    {
+     "item": "Pistachios",
+     "qty": 25,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Warm the milk gently to approximately 60°C.",
+    "2. Add the saffron and leave to infuse for 10 minutes.",
+    "3. Heat the cream to approximately 70°C.",
+    "4. Pour the warm cream over the white chocolate and mix until completely melted and smooth.",
+    "5. Add the pistachio paste and saffron-infused milk.",
+    "6. Mix until smooth and emulsified.",
+    "7. Fold through the finely chopped pistachios.",
+    "8. Allow the filling to cool until it reaches a pipeable consistency."
+   ],
+   "notes": [
+    "Pistachios, very finely chopped. No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Saffron Pistachio Chocolate Topping",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Dark chocolate",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Pistachio slivers",
+     "qty": 20,
+     "unit": "g"
+    },
+    {
+     "item": "Saffron threads",
+     "qty": 0.05,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Melt and temper the dark chocolate.",
+    "2. Cover the pistachio filling with a thin, even layer of dark chocolate.",
+    "3. Garnish immediately with pistachio slivers and a few saffron threads.",
+    "4. Refrigerate briefly until set."
+   ],
+   "notes": [
+    "Part of Saffron Pistachio, Date & Almond Cups. No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Saffron Pistachio, Date & Almond Cups",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "recipe": "Date & Almond Cups",
+     "qty": 352
+    },
+    {
+     "recipe": "Saffron Pistachio Filling",
+     "qty": 240
+    },
+    {
+     "recipe": "Saffron Pistachio Chocolate Topping",
+     "qty": 120
+    }
+   ],
+   "method": [
+    "Assembly",
+    "1. Remove the date and almond cups from the moulds.",
+    "2. Pipe the saffron pistachio filling neatly into the centre of each cup.",
+    "3. Refrigerate for 20–30 minutes to set the filling.",
+    "",
+    "Finishing",
+    "1. Melt and temper the dark chocolate.",
+    "2. Cover the pistachio filling with a thin, even layer of dark chocolate.",
+    "3. Garnish immediately with pistachio slivers and a few saffron threads.",
+    "4. Refrigerate briefly until set.",
+    "5. Temper for 5–10 minutes at room temperature before serving for the best texture."
+   ],
+   "notes": [
+    "Costed as one full batch of each of the three components. The cup count was not given in the source."
+   ]
+  },
+  {
+   "name": "Sushi Vinegar",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Rice vinegar",
+     "qty": 5000,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 4200,
+     "unit": "g"
+    },
+    {
+     "item": "Salt",
+     "qty": 1250,
+     "unit": "g"
+    },
+    {
+     "item": "Kombu",
+     "qty": 8,
+     "unit": "g"
+    },
+    {
+     "item": "Dried shiitake",
+     "qty": 20,
+     "unit": "g"
+    },
+    {
+     "item": "Fresh ginger",
+     "qty": 30,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Place the rice vinegar, sugar and salt in a saucepan.",
+    "2. Add the kombu, dried shiitake and ginger.",
+    "3. Heat gently without boiling, stirring until the sugar and salt are completely dissolved.",
+    "4. Remove from the heat and allow the aromatics to infuse.",
+    "5. Strain through a fine sieve.",
+    "6. Cool completely and store refrigerated in a clean, labelled container."
+   ],
+   "notes": [
+    "Japanese sauce recipe 1. Rice vinegar 5 kg, sugar 4.200 kg, salt 1.250 kg. No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Fig Leaf Emulsion",
+   "category": "Special Meals",
+   "portions": 1,
+   "yield_g": 148,
+   "ingredients": [
+    {
+     "item": "Fig leaf oil",
+     "qty": 90,
+     "unit": "g"
+    },
+    {
+     "item": "Pasteurised egg white",
+     "qty": 20,
+     "unit": "g"
+    },
+    {
+     "recipe": "Sushi Vinegar",
+     "qty": 15
+    },
+    {
+     "item": "Fine salt",
+     "qty": 3,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Ensure all ingredients are very cold before starting.",
+    "2. Place the fig leaf oil, egg white, sushi vinegar, salt and ice into a small high-speed blender.",
+    "3. Blend at high speed until completely smooth, bright green and fully emulsified.",
+    "4. Check the seasoning and consistency.",
+    "5. Transfer immediately to a clean container.",
+    "6. Cover and refrigerate for 1 hour before use.",
+    "7. Keep refrigerated until required and stir gently before serving."
+   ],
+   "notes": [
+    "Yield: approximately 148 g. Not costed: ice 20 g. Fig leaf oil has no recipe in the source; it is entered as a stock item."
+   ]
+  },
+  {
+   "name": "Mascarpone Siphon Mousse",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Whole milk",
+     "qty": 200,
+     "unit": "g"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 200,
+     "unit": "g"
+    },
+    {
+     "item": "Orange juice",
+     "qty": 70,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 60,
+     "unit": "g"
+    },
+    {
+     "item": "Egg yolks",
+     "qty": 60,
+     "unit": "g"
+    },
+    {
+     "item": "Mascarpone",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "N2O cartridge",
+     "qty": 1,
+     "unit": "units"
+    }
+   ],
+   "method": [
+    "Blend together: milk 200, cream 200, orange juice 70, sugar 60, egg yolks 60.",
+    "Bring up to 85 degrees.",
+    "Add 150 mascarpone and blend again.",
+    "Pour into siphon and charge 1 gas cannister.",
+    "Let it set in fridge."
+   ],
+   "notes": [
+    "The source gives no units; quantities are read as grams. No yield was given; costed as 1 batch (one siphon charge)."
+   ]
+  },
+  {
+   "name": "Smoked Butter Potato Foam",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Potatoes",
+     "qty": 520,
+     "unit": "g"
+    },
+    {
+     "item": "Extra virgin olive oil",
+     "qty": 80,
+     "unit": "g"
+    },
+    {
+     "item": "Whole milk",
+     "qty": 700,
+     "unit": "g"
+    },
+    {
+     "item": "Smoked butter",
+     "qty": 80,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 8,
+     "unit": "g"
+    },
+    {
+     "item": "N2O cartridge",
+     "qty": 2,
+     "unit": "units"
+    }
+   ],
+   "method": [
+    "1. Peel the potatoes and leave them whole.",
+    "2. Place the potatoes and olive oil into a vacuum bag. Vacuum seal at full pressure.",
+    "3. Cook sous-vide at 90°C for 2 hours, until the potatoes are completely tender.",
+    "4. Alternatively, place the whole peeled potatoes on a bed of coarse rock salt and roast at 180°C until completely cooked through.",
+    "5. Heat the milk to approximately 70°C.",
+    "6. Transfer the hot potatoes to a Thermomix or high-powered blender. Add the warm milk and blend until completely smooth and silky.",
+    "7. Add the smoked butter and salt. Blend again until fully emulsified. Adjust the smoked butter and seasoning if required.",
+    "8. Pass the mixture through a very fine sieve to ensure there are no particles that could obstruct the siphon.",
+    "9. Transfer the mixture while still hot into a 1 L siphon.",
+    "10. Charge with 2 N₂O cream chargers, shaking thoroughly after each charger.",
+    "11. Hold the siphon in a 60°C water bath until required for service.",
+    "12. Shake the siphon firmly before dispensing. Serve immediately for a light, silky potato foam with a pronounced smoked-butter finish."
+   ],
+   "notes": [
+    "Chef's Note: For a finer, more elegant foam, use a floury potato with a relatively high starch content. Avoid over-processing the potatoes before the milk is incorporated, as excessive mechanical action can make the potato starch gluey.",
+    "No yield was given in the source; costed as 1 batch (one 1 L siphon)."
+   ]
+  },
+  {
+   "name": "Cured Egg Yolks",
+   "category": "Special Meals",
+   "portions": 6,
+   "ingredients": [
+    {
+     "item": "Egg yolks",
+     "qty": 108,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 500,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 500,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the fine salt and caster sugar thoroughly until evenly mixed.",
+    "2. Spread half of the salt and sugar mixture evenly into a suitable container.",
+    "3. Make 6 small indentations in the cure, ensuring sufficient space between each one.",
+    "4. Carefully separate the egg yolks from the whites, keeping each yolk completely intact.",
+    "5. Place 1 egg yolk into each indentation.",
+    "6. Gently cover the yolks completely with the remaining salt and sugar mixture. Do not press down on the yolks.",
+    "7. Cover the container and refrigerate at 2–4°C for 8 days.",
+    "8. After 8 days, carefully remove the yolks from the cure.",
+    "9. Gently rinse each yolk under cold water to remove all excess salt and sugar.",
+    "10. Pat completely dry with kitchen paper.",
+    "11. Place the cured yolks onto a wire rack or a baking tray lined with baking paper.",
+    "12. Dry in the oven at 60°C for 1 hour 30 minutes, or until firm on the outside while remaining slightly pliable in the centre.",
+    "13. Remove from the oven and allow to cool completely.",
+    "14. Store refrigerated in a clean, airtight container."
+   ],
+   "notes": [
+    "Yield: 6 cured egg yolks (6 yolks ≈ 108 g). Serving: Finely grate the cured egg yolks directly over pasta, risotto, vegetables, salads, fish, tartare or other savoury dishes as a rich umami seasoning.",
+    "The cure (500 g salt, 500 g sugar) is costed as listed, although most of it is rinsed off."
+   ]
+  },
+  {
+   "name": "Ajoblanco Sauce",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Blanched almonds",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Garlic",
+     "qty": 5,
+     "unit": "g"
+    },
+    {
+     "item": "White bread",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Extra virgin olive oil",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Sherry vinegar",
+     "qty": 20,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 4,
+     "unit": "g"
+    },
+    {
+     "item": "White pepper",
+     "qty": 0.5,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Soak the bread in a little of the cold water for 5 minutes.",
+    "2. Place almonds, garlic, soaked bread, vinegar, salt and 120 g water into a high-speed blender.",
+    "3. Blend until completely smooth.",
+    "4. With the blender running, slowly emulsify in the olive oil.",
+    "5. Adjust the consistency with the remaining cold water. It should be silky, creamy and nappant, not runny.",
+    "6. Pass through a fine chinois.",
+    "7. Check acidity and seasoning.",
+    "8. Refrigerate for at least 1 hour before serving."
+   ],
+   "notes": [
+    "For a more refined restaurant version: add 30 g green grape juice and reduce the water accordingly. It gives the sauce a beautiful subtle sweetness and acidity.",
+    "White bread, crust removed. Water 120–160 g is not costed.",
+    "Source check: the ingredient list read \"Almond milk 120–160 g\" but every step of the method uses water; entered as water. Please confirm. No yield was given; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Vanilla & Extra Virgin Olive Oil Ganache",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "White chocolate",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 90,
+     "unit": "g"
+    },
+    {
+     "item": "Glucose syrup",
+     "qty": 10,
+     "unit": "g"
+    },
+    {
+     "item": "Extra virgin olive oil",
+     "qty": 25,
+     "unit": "g"
+    },
+    {
+     "item": "Vanilla bean",
+     "qty": 2,
+     "unit": "units"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 1,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Split the vanilla beans lengthwise and scrape out the seeds.",
+    "2. Combine the whipping cream, glucose syrup, vanilla seeds and pods in a saucepan.",
+    "3. Heat to 80°C, remove from the heat, cover and leave to infuse for 20 minutes.",
+    "4. Remove the vanilla pods. Reheat the infused cream gently if necessary.",
+    "5. Place the white chocolate and sea salt in a tall container. Pour the hot vanilla cream over the chocolate.",
+    "6. Allow to stand for 1 minute, then blend with a hand blender until completely smooth, keeping the blender submerged to avoid incorporating air.",
+    "7. Gradually add the extra virgin olive oil while continuing to blend until the ganache is perfectly emulsified, smooth and glossy.",
+    "8. Cover directly on the surface with cling film and refrigerate overnight to crystallise.",
+    "9. Use directly from the refrigerator for piping. If the ganache is too firm, allow it to soften slightly before use."
+   ],
+   "notes": [
+    "Whipping cream 35% fat. No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Dark Chocolate Ice Cream",
+   "category": "Special Meals",
+   "portions": 1,
+   "yield_g": 1000,
+   "ingredients": [
+    {
+     "item": "Non-dairy cream",
+     "qty": 163,
+     "unit": "g"
+    },
+    {
+     "item": "Dark chocolate 60.5%",
+     "qty": 147,
+     "unit": "g"
+    },
+    {
+     "item": "Dark chocolate 81%",
+     "qty": 75,
+     "unit": "g"
+    },
+    {
+     "item": "Dextrose",
+     "qty": 67,
+     "unit": "g"
+    },
+    {
+     "item": "Allulose",
+     "qty": 65,
+     "unit": "g"
+    },
+    {
+     "item": "Dry glucose",
+     "qty": 41,
+     "unit": "g"
+    },
+    {
+     "item": "Trimoline",
+     "qty": 29,
+     "unit": "g"
+    },
+    {
+     "item": "Ice cream stabilizer",
+     "qty": 4,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 4,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the allulose, dextrose, dry glucose and ice cream stabilizer thoroughly in a bowl.",
+    "2. Place the water, non-dairy cream and trimoline in a saucepan. Begin heating over medium heat.",
+    "3. At approximately 40°C, gradually whisk in the combined dry ingredients. Continue whisking until completely dissolved.",
+    "4. Add the salt and continue heating the mixture to 85°C, stirring continuously.",
+    "5. Place both chocolates in a tall container.",
+    "6. Pour approximately one-third of the hot ice cream base over the chocolate. Allow to stand for 30 seconds, then emulsify from the centre outward.",
+    "7. Gradually add the remaining hot base while blending with a hand blender until completely smooth, glossy and homogeneous.",
+    "8. Cool the mixture rapidly to 4°C.",
+    "9. Cover and mature in the refrigerator at 4°C for 6–12 hours.",
+    "10. Blend the matured base once more before churning.",
+    "11. Churn in an ice cream machine until it reaches approximately −6°C to −8°C.",
+    "12. Transfer immediately to a pre-chilled container and harden at −18°C or below for a minimum of 4 hours before serving."
+   ],
+   "notes": [
+    "Ingredients total 1,000 g including 405 g water (not costed). No portion count was given; costed as 1 batch of 1 kg."
+   ]
+  },
+  {
+   "name": "Tomato & Vanilla Jam",
+   "category": "Special Meals",
+   "portions": 1,
+   "yield_g": 375,
+   "ingredients": [
+    {
+     "item": "Ripe tomatoes",
+     "qty": 500,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 200,
+     "unit": "g"
+    },
+    {
+     "item": "Vanilla pod",
+     "qty": 1,
+     "unit": "units"
+    },
+    {
+     "item": "Lemon juice",
+     "qty": 20,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Bring a saucepan of water to the boil. Score the base of the tomatoes and blanch for 15–20 seconds. Transfer immediately into iced water.",
+    "2. Peel the tomatoes, cut into quarters and remove the seeds.",
+    "3. Roughly dice the tomato flesh and place into a saucepan.",
+    "4. Split the vanilla pod lengthways and scrape out the seeds.",
+    "5. Add the vanilla seeds, pod, sugar and lemon juice to the tomatoes.",
+    "6. Mix well and leave to macerate for 20–30 minutes.",
+    "7. Bring slowly to the boil, then reduce the heat and cook gently for approximately 25–35 minutes, stirring regularly.",
+    "8. Continue cooking until the tomatoes are completely tender and the mixture reaches a glossy, jam-like consistency.",
+    "9. Remove the vanilla pod.",
+    "10. For a rustic finish, leave the jam as is. For a finer texture, lightly blend while still warm.",
+    "11. Transfer into a clean sterilised jar, cool and refrigerate."
+   ],
+   "notes": [
+    "Yield: approximately 350–400 g (entered as 375 g).",
+    "Chef's Note: The vanilla should remain subtle and aromatic rather than dominate the tomato. This jam works particularly well with soft cheeses, goat's cheese, foie gras, grilled bread, charcuterie or as an accompaniment to savoury pastries."
+   ]
+  },
+  {
+   "name": "Beef Gravlax",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Rump heart",
+     "qty": 1000,
+     "unit": "g"
+    },
+    {
+     "item": "Coarse sea salt",
+     "qty": 400,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 250,
+     "unit": "g"
+    },
+    {
+     "item": "Espelette pepper",
+     "qty": 10,
+     "unit": "g"
+    },
+    {
+     "item": "Black pepper",
+     "qty": 15,
+     "unit": "g"
+    },
+    {
+     "item": "Sage leaves",
+     "qty": 3,
+     "unit": "units"
+    }
+   ],
+   "method": [
+    "1. Prepare the beef: Trim the rump heart carefully, removing all sinew, silver skin and excess fat. Keep the beef in one evenly shaped piece to ensure consistent curing.",
+    "2. Prepare the cure: Combine the coarse salt, caster sugar, Espelette pepper and cracked black pepper. Finely slice the sage leaves and mix through the cure.",
+    "3. Cure the beef: Spread half of the curing mixture in a non-reactive container. Place the beef on top and cover completely with the remaining cure, ensuring all surfaces are evenly coated.",
+    "4. Refrigerate: Cover and refrigerate at 2–4°C for 12–18 hours, depending on the thickness of the beef and the desired level of curing. Turn the beef halfway through.",
+    "5. Clean: Remove the beef from the cure. Rinse briefly under cold water to remove the excess curing mixture, then dry thoroughly with kitchen paper.",
+    "6. Dry and rest: Place the beef uncovered on a wire rack in the refrigerator for 6–12 hours. This allows the surface to dry and the cure to distribute evenly throughout the meat.",
+    "7. To serve: Using a very sharp slicing knife, slice the beef thinly across the grain. Serve chilled."
+   ],
+   "notes": [
+    "Chef's Note: For a softer texture and more delicate cure, allow approximately 12 hours. For a firmer texture and deeper seasoning, cure for up to 18 hours. Avoid over-curing, particularly when using smaller or thinner pieces of beef.",
+    "1 kg rump heart is the trimmed weight. Black pepper is coarsely cracked. No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Salted White Chocolate Caramel",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Caster sugar",
+     "qty": 490,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 350,
+     "unit": "g"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 385,
+     "unit": "g"
+    },
+    {
+     "item": "White chocolate",
+     "qty": 175,
+     "unit": "g"
+    },
+    {
+     "item": "Fleur de sel",
+     "qty": 10.5,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Place the sugar in a clean, heavy-based saucepan and cook over medium heat to obtain a smooth, even dry caramel with a deep golden-amber colour.",
+    "2. Meanwhile, bring the cream to a gentle simmer.",
+    "3. Once the caramel has reached the desired colour, gradually add the hot cream in several additions, stirring carefully after each addition. Take care, as the mixture will rise and produce hot steam.",
+    "4. Return to low heat and cook for approximately 1 minute, stirring until completely smooth and homogeneous.",
+    "5. Remove from the heat. Add the butter gradually and mix until fully incorporated.",
+    "6. Add the fleur de sel and mix well.",
+    "7. Pour the hot caramel over the white chocolate. Allow to stand for approximately 1 minute, then mix until the chocolate is completely melted.",
+    "8. Emulsify thoroughly using a hand blender, keeping the blender head submerged to avoid incorporating air.",
+    "9. Blend until the caramel is perfectly smooth, glossy and homogeneous.",
+    "10. Transfer to a clean container, cover directly on the surface and allow to cool before refrigerating."
+   ],
+   "notes": [
+    "Storage: Keep refrigerated at +2°C to +4°C in an airtight container. For service, allow the caramel to soften at room temperature or warm gently until the desired consistency is reached.",
+    "Note: The original method mentions vanilla, but no vanilla quantity is listed in the ingredients, so it is not added to the standardized recipe.",
+    "No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Ultra-Light Dark Chocolate Mousse",
+   "category": "Special Meals",
+   "portions": 1,
+   "yield_g": 300,
+   "ingredients": [
+    {
+     "item": "Dark chocolate 70%",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Egg whites",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "N2O cartridge",
+     "qty": 2,
+     "unit": "units"
+    }
+   ],
+   "method": [
+    "1. Chocolate: Place the dark chocolate in a suitable container. For a smoked version, lightly smoke the chocolate with fir or pine before preparing the mousse.",
+    "2. Chocolate emulsion: Bring the cream just to the boil. Pour the hot cream gradually over the chocolate. Emulsify from the centre outward until completely smooth, glossy and homogeneous.",
+    "3. Egg whites: Add the raw egg whites to the warm chocolate emulsion. Blend thoroughly with a hand blender until perfectly smooth, taking care not to incorporate excessive air.",
+    "4. Siphon: Pass the mixture through a fine chinois. Transfer immediately into a siphon. Charge with 2 N₂O cartridges, shaking vigorously after each cartridge.",
+    "5. Service: The mousse can be dispensed immediately for a very light, warm texture. Alternatively, refrigerate the siphon for 1–2 hours for a colder, slightly more structured mousse. Shake well before dispensing."
+   ],
+   "notes": [
+    "Yield: approximately 300 g mixture.",
+    "Chef's Note: For additional character, infuse the cream with fresh fir tips before straining and heating. The chocolate can also be lightly smoked with fir to create a subtle resinous, woodland aroma.",
+    "The finished mousse should be extremely light and aerated, with a smooth chocolate flavour and very little perceived heaviness."
+   ]
+  },
+  {
+   "name": "Crispy Puffed Tapioca Chips",
+   "category": "Special Meals",
+   "cooking_method": "Deep-fry",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Small tapioca pearls",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Dashi powder",
+     "qty": 10,
+     "unit": "g"
+    },
+    {
+     "item": "Tapioca flour",
+     "qty": 5,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 3,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Bring the water to a full boil and season lightly with salt.",
+    "2. Add the tapioca pearls and cook for approximately 10 minutes, stirring regularly to prevent them from sticking. The pearls should become mostly translucent while retaining their shape.",
+    "3. Drain immediately and rinse briefly under cold running water. Drain very well and allow all excess water to escape.",
+    "4. Place the cooked tapioca in a mixing bowl. Add the dashi powder and tapioca flour. Mix thoroughly until evenly seasoned and lightly bound together.",
+    "5. Line a flat baking tray with a silicone mat or baking paper. Spread the tapioca mixture into a very thin, even layer, approximately 2–3 mm thick.",
+    "6. Dry in the oven or dehydrator at 75°C for 4–6 hours, or until completely dry, firm and brittle. There must be no residual moisture.",
+    "7. Allow to cool completely, then break into irregular-sized chips.",
+    "8. Heat the frying oil to 200°C.",
+    "9. Fry the dried tapioca pieces individually or in small batches for approximately 3–5 seconds. They should expand and puff almost instantly.",
+    "10. Remove immediately and drain on absorbent paper.",
+    "11. Season lightly with fine sea salt while still hot."
+   ],
+   "notes": [
+    "Chef's Notes: The tapioca sheets must be completely dehydrated before frying; any remaining moisture will prevent proper puffing and can cause excessive oil splattering.",
+    "Not costed: cooking water 2 L; vegetable oil for deep-frying. No yield was given in the source; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Oyster Mayonnaise",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Fresh oysters",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Glucose",
+     "qty": 17,
+     "unit": "g"
+    },
+    {
+     "item": "Egg yolks",
+     "qty": 55,
+     "unit": "g"
+    },
+    {
+     "item": "Neutral oil",
+     "qty": 300,
+     "unit": "g"
+    },
+    {
+     "item": "Dijon mustard",
+     "qty": 5,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Place the oysters together with all their natural liquor into a vacuum bag and seal.",
+    "2. Cook sous vide at 63°C for 30 minutes.",
+    "3. Immediately chill completely over ice, retaining all the oyster cooking liquor.",
+    "4. Transfer the chilled oysters and their liquor to a high-speed blender.",
+    "5. Add the glucose, egg yolks and Dijon mustard. Blend until completely smooth.",
+    "6. With the blender running, gradually incorporate the neutral oil in a slow, steady stream to create a stable emulsion.",
+    "7. Continue blending until the mayonnaise is smooth, thick and glossy.",
+    "8. Taste and adjust the seasoning with fine salt only if required; the oyster liquor will already provide natural salinity.",
+    "9. For an exceptionally refined texture, pass through a fine chinois.",
+    "10. Transfer into an espuma siphon and charge. Refrigerate until required."
+   ],
+   "notes": [
+    "A smooth, rich oyster mayonnaise with a clean saline flavour. Excellent with seafood, scallops, crab, veal, shellfish or as a refined sauce for cold starters.",
+    "Chef's Notes: The oysters and cooking liquor must be completely chilled before emulsifying to maintain a stable mayonnaise. Keep the flavour clean by using a genuinely neutral oil such as grapeseed or sunflower oil. For plating without an espuma siphon, transfer directly into a piping bottle or piping bag and keep refrigerated.",
+    "Fresh oysters with their natural liquor, 100 g. Fine salt as required (not costed). No yield was given; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Classic Italian Tiramisu",
+   "category": "Special Meals",
+   "portions": 10,
+   "ingredients": [
+    {
+     "item": "Mascarpone",
+     "qty": 500,
+     "unit": "g"
+    },
+    {
+     "item": "Egg yolks",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 200,
+     "unit": "g"
+    },
+    {
+     "item": "Egg whites",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 1,
+     "unit": "g"
+    },
+    {
+     "item": "Strong espresso coffee",
+     "qty": 500,
+     "unit": "ml"
+    },
+    {
+     "item": "Marsala wine",
+     "qty": 50,
+     "unit": "ml"
+    },
+    {
+     "item": "Savoiardi biscuits",
+     "qty": 375,
+     "unit": "g"
+    },
+    {
+     "item": "Unsweetened cocoa powder",
+     "qty": 30,
+     "unit": "g"
+    },
+    {
+     "item": "Dark chocolate 70%",
+     "qty": 30,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Prepare the coffee: Mix the hot espresso with 40 g sugar. Allow to cool completely, then add the Marsala if using.",
+    "2. Prepare the yolk base: Whisk the egg yolks with 120 g sugar over a bain-marie until pale, thick and creamy. Bring the mixture to 70–72°C, whisking continuously. Remove from the heat and continue whisking until slightly cooled.",
+    "3. Add mascarpone: Soften the mascarpone gently with a spatula. Fold it gradually into the yolk mixture until completely smooth. Avoid over-whisking, which can cause mascarpone to split.",
+    "4. Prepare the egg whites: Whisk the egg whites with the salt until foamy. Gradually add 40 g sugar and whisk to medium-firm peaks. Fold into the mascarpone mixture in 3 additions, keeping as much aeration as possible.",
+    "5. Assemble: Quickly dip each savoiardo into the cold coffee mixture. Do not saturate them. Arrange one even layer in the serving dish. Spread over half of the mascarpone cream. Add a second layer of coffee-soaked savoiardi and finish with the remaining mascarpone cream. Smooth the surface neatly.",
+    "6. Rest: Cover and refrigerate for minimum 6 hours, preferably 12 hours overnight.",
+    "7. Finish: Immediately before serving, dust generously with unsweetened cocoa powder. Add finely grated 70% dark chocolate if desired."
+   ],
+   "notes": [
+    "Yield: 10 portions. Style: Traditional, rich and light.",
+    "Chef's Notes: For a clean restaurant-quality cut, refrigerate overnight and portion directly from the refrigerator. The ideal tiramisu should have a light mascarpone mousse, strongly defined espresso flavour and moist—but not soggy—savoiardi.",
+    "Caster sugar 200 g = 120 g (yolk base) + 40 g (egg whites) + 40 g (coffee). Savoiardi 350–400 g entered as 375 g. Marsala and the dark chocolate are optional in the source and are costed as included."
+   ]
+  },
+  {
+   "name": "Smoked Oyster Beignets",
+   "category": "Special Meals",
+   "cooking_method": "Deep-fry",
+   "portions": 20,
+   "ingredients": [
+    {
+     "item": "Plain flour",
+     "qty": 450,
+     "unit": "g"
+    },
+    {
+     "item": "Whole milk",
+     "qty": 120,
+     "unit": "g"
+    },
+    {
+     "item": "Whole egg",
+     "qty": 55,
+     "unit": "g"
+    },
+    {
+     "item": "Active dry yeast",
+     "qty": 7,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 10,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 14,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 42,
+     "unit": "g"
+    },
+    {
+     "item": "Smoked oysters",
+     "qty": 110,
+     "unit": "g"
+    },
+    {
+     "item": "Black pepper",
+     "qty": 1,
+     "unit": "g"
+    },
+    {
+     "item": "Smoked oyster oil",
+     "qty": 5,
+     "unit": "g"
+    },
+    {
+     "item": "Dried nori sheets",
+     "qty": 3,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the warm water, yeast and caster sugar. Mix well and leave for 5–10 minutes until the yeast begins to foam.",
+    "2. Add the milk and egg. Whisk until completely combined.",
+    "3. Add the flour and salt. Mix on low speed until a rough, shaggy dough forms.",
+    "4. Continue kneading on low-medium speed until the dough begins to become smooth and elastic.",
+    "5. Add the softened butter gradually, allowing each addition to incorporate before adding more.",
+    "6. Continue kneading until the dough is smooth, soft and elastic with a slightly sticky texture.",
+    "7. Pat the smoked oysters completely dry with kitchen paper and finely chop.",
+    "8. Add the smoked oysters, black pepper and smoked oyster oil, if using. Mix briefly on low speed until evenly distributed without breaking down the oysters excessively.",
+    "9. Transfer the dough to a lightly oiled container. Cover tightly and refrigerate overnight at 3–5°C.",
+    "10. The following day, remove the dough from the refrigerator and portion into approximately 45–50 g pieces. Shape gently into neat balls.",
+    "11. Place on a lightly oiled tray, cover and allow to prove until soft, aerated and approximately doubled in volume.",
+    "12. Heat the frying oil to 170–175°C.",
+    "13. Fry the beignets in small batches until evenly puffed and deep golden brown, turning as necessary for even cooking.",
+    "14. Remove from the oil and drain thoroughly on absorbent paper.",
+    "",
+    "Nori Salt: Toast the nori very lightly until crisp. Cool completely, then grind to a fine powder. Combine 3 g nori powder with 6 g fine sea salt.",
+    "To Finish: Season the beignets with the nori salt immediately after frying. Serve hot and freshly fried, while the exterior is crisp and the centre remains light, soft and aromatic."
+   ],
+   "notes": [
+    "Yield: approximately 20 pieces. Fine salt 14 g = 8 g in the dough + 6 g in the nori salt. Not costed: warm water 180 g; neutral oil for deep-frying."
+   ]
+  },
+  {
+   "name": "Sexy Pickle",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Chardonnay vinegar",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 100,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the Chardonnay vinegar, sugar and water in a saucepan.",
+    "2. Bring to the boil, ensuring the sugar is completely dissolved.",
+    "3. Remove from the heat and allow to cool completely.",
+    "4. Use chilled or at room temperature as required."
+   ],
+   "notes": [
+    "Water 100 g is not costed. Used to season the mushrooms in the beef fillet tartare."
+   ]
+  },
+  {
+   "name": "Beef Fillet Tartare, Seasoned Mushrooms, Oscietra Caviar & Bone Marrow Emulsion (per portion)",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Beef fillet",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Oscietra caviar",
+     "qty": 8,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "Beef fillet: Remove the chain from the beef fillet and carefully trim away all silver skin and any dark or oxidised areas. Divide the fillet into three sections. Cut into 5 mm slices, then into 5 mm strips, and finally into an even 5 mm dice. If using the entire fillet, combine the diced meat thoroughly so that the chateaubriand, centre cut and tail are evenly distributed. Keep refrigerated until required. At the time of service, season the beef lightly with salt and soy sauce. Work the seasoning gently into the beef until it becomes slightly tacky and the soy has been absorbed into the meat.",
+    "Seasoned mushrooms: Combine the mushrooms, shallot and chives. Season with Sexy Pickle, olive oil and fine sea salt. Mix carefully to distribute the seasoning evenly. Allow to macerate briefly, then drain thoroughly before assembling the tartare.",
+    "Assembly – per portion: 50 g seasoned beef fillet, 45 g seasoned mushrooms, well drained, 8 g Oscietra caviar, bone marrow emulsion in a squeeze bottle.",
+    "1. Place 50 g beef tartare into a round tartare dish or mould. Press gently into an even, compact layer.",
+    "2. Add 45 g seasoned mushrooms over the beef, pressing carefully all the way to the edges.",
+    "3. Spread 8 g Oscietra caviar evenly over the mushroom layer.",
+    "4. Pipe the bone marrow emulsion around the outer edge, following the positions of a clock face from 1 to 12.",
+    "5. Pipe a second inner circle of emulsion at positions 2, 4, 6, 8, 10 and 12.",
+    "6. Finish with one dot of bone marrow emulsion in the centre.",
+    "7. Serve immediately."
+   ],
+   "notes": [
+    "41-day aged beef fillet, fully trimmed. Costed per portion for the beef (50 g) and caviar (8 g) only. Not costed because the source gives no quantities or recipe: the 45 g seasoned mushrooms (mushrooms, shallot, chives, Sexy Pickle, olive oil, salt), the bone marrow emulsion, salt and soy sauce."
+   ]
+  },
+  {
+   "name": "Charred Sugar Snap Pea, Mint & Chilli Sauce",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Sugar snap peas",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Shallot",
+     "qty": 30,
+     "unit": "g"
+    },
+    {
+     "item": "Garlic",
+     "qty": 5,
+     "unit": "g"
+    },
+    {
+     "item": "Fresh ginger",
+     "qty": 5,
+     "unit": "g"
+    },
+    {
+     "item": "Bird's eye chilli",
+     "qty": 3,
+     "unit": "g"
+    },
+    {
+     "item": "White wine",
+     "qty": 60,
+     "unit": "ml"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 60,
+     "unit": "ml"
+    },
+    {
+     "item": "Fresh mint",
+     "qty": 5,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 3,
+     "unit": "g"
+    },
+    {
+     "item": "Neutral oil",
+     "qty": 10,
+     "unit": "ml"
+    }
+   ],
+   "method": [
+    "1. Blanch the sugar snap peas briefly in boiling salted water until vibrant green.",
+    "2. Refresh immediately in iced water and drain thoroughly.",
+    "3. Lightly coat the peas with neutral oil and char quickly over high heat. Reserve.",
+    "4. Heat the remaining oil and gently sauté the shallot, ginger and garlic until translucent without colouring.",
+    "5. Add the chilli and white wine. Reduce by approximately half.",
+    "6. Add the cream and bring gently to a simmer.",
+    "7. Remove from the heat and add the mint.",
+    "8. Allow to cool slightly, then blend with the charred sugar snap peas until completely smooth.",
+    "9. Pass through a fine chinois.",
+    "10. Adjust seasoning with salt and reserve."
+   ],
+   "notes": [
+    "Sauce for the Prawn & Edamame Cappelletti (gluten free). Shallot, finely sliced; garlic, sliced; ginger, grated; chilli, sliced. No yield was given; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Prawn Filling (Cappelletti)",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Raw prawn flesh",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 4,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 3,
+     "unit": "g"
+    },
+    {
+     "item": "White pepper",
+     "qty": 1,
+     "unit": "g"
+    },
+    {
+     "item": "Sesame oil",
+     "qty": 15,
+     "unit": "ml"
+    },
+    {
+     "item": "Oyster sauce",
+     "qty": 15,
+     "unit": "g"
+    },
+    {
+     "item": "Water chestnuts",
+     "qty": 20,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Freeze the prawn flesh until firm but not completely frozen.",
+    "2. Process the prawns with the sugar, salt and white pepper until a smooth, slightly sticky paste is obtained.",
+    "3. Add the sesame oil and oyster sauce.",
+    "4. Add the water chestnuts and pulse briefly until evenly incorporated while retaining a little texture.",
+    "5. Keep refrigerated."
+   ],
+   "notes": [
+    "Raw prawn flesh, cleaned. Water chestnuts, finely sliced. White pepper, ground. No yield was given; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Edamame & Spinach Filling",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Edamame",
+     "qty": 80,
+     "unit": "g"
+    },
+    {
+     "item": "Spinach leaves",
+     "qty": 30,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 3,
+     "unit": "g"
+    },
+    {
+     "item": "Sesame oil",
+     "qty": 15,
+     "unit": "ml"
+    },
+    {
+     "recipe": "Prawn Filling (Cappelletti)",
+     "qty": 40
+    }
+   ],
+   "method": [
+    "1. Blend the edamame, spinach, salt and sesame oil until smooth.",
+    "2. Fold in the prepared prawn filling until evenly incorporated.",
+    "3. Transfer the prawn filling and green filling separately onto cling film.",
+    "4. Roll each into an equal-sized log and seal one end.",
+    "5. Place both logs parallel inside the same piping bag to create a two-colour filling."
+   ],
+   "notes": [
+    "Edamame, blanched. Spinach leaves, blanched and thoroughly squeezed dry. Uses 40 g of the prepared prawn filling. No yield was given; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Gluten-Free Cappelletti Dough",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Tapioca starch",
+     "qty": 120,
+     "unit": "g"
+    },
+    {
+     "item": "Rice starch",
+     "qty": 80,
+     "unit": "g"
+    },
+    {
+     "item": "Potato starch",
+     "qty": 30,
+     "unit": "g"
+    },
+    {
+     "item": "Xanthan gum",
+     "qty": 2,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 2,
+     "unit": "g"
+    },
+    {
+     "item": "Neutral oil",
+     "qty": 10,
+     "unit": "ml"
+    }
+   ],
+   "method": [
+    "1. Combine the tapioca starch, rice starch, potato starch, xanthan gum and salt thoroughly.",
+    "2. Add the boiling water gradually while mixing continuously.",
+    "3. Bring together into a dough while still hot.",
+    "4. Knead until smooth and homogeneous.",
+    "5. If the dough is too sticky, incorporate a small amount of additional tapioca starch.",
+    "6. Keep covered while working to prevent the dough from drying."
+   ],
+   "notes": [
+    "Boiling water 190–210 ml is not costed. Tapioca starch for dusting, as required (not costed). No yield was given; costed as 1 batch.",
+    "Source check: step 1 of the source said \"wheat starch and tapioca starch\", but the ingredient list has tapioca, rice and potato starch and the dish is gluten free. Step 1 is written to match the ingredient list."
+   ]
+  },
+  {
+   "name": "Prawn & Edamame Cappelletti (Gluten Free)",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "recipe": "Gluten-Free Cappelletti Dough",
+     "qty": 234
+    },
+    {
+     "recipe": "Prawn Filling (Cappelletti)",
+     "qty": 153
+    },
+    {
+     "recipe": "Edamame & Spinach Filling",
+     "qty": 153
+    },
+    {
+     "recipe": "Charred Sugar Snap Pea, Mint & Chilli Sauce",
+     "qty": 151
+    }
+   ],
+   "method": [
+    "Assembly & Cooking",
+    "1. Roll the dough to 1–2 mm thickness.",
+    "2. Cut into rounds using a large circular cutter or flower-shaped cutter.",
+    "3. Pipe a coin-sized portion of the two-colour filling into the centre of each wrapper.",
+    "4. Fold in half and press firmly to seal, ensuring no air remains around the filling.",
+    "5. Bring the two ends together and pinch firmly to form the cappelletti shape.",
+    "6. Lightly coat the steaming tray with non-stick spray.",
+    "7. Arrange the cappelletti without allowing them to touch.",
+    "8. Steam for approximately 5 minutes, or until the wrapper becomes translucent and the prawn filling is fully cooked.",
+    "9. Serve immediately with the warm charred sugar snap pea, mint and chilli sauce."
+   ],
+   "notes": [
+    "Costed as one full batch of the dough, the two fillings and the sauce. The prawn filling is 153 g here because 40 g of the batch goes into the edamame filling. The cappelletti count was not given in the source."
+   ]
+  },
+  {
+   "name": "Apple Yeast Water",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Red apple",
+     "qty": 1,
+     "unit": "units"
+    },
+    {
+     "item": "Raisins",
+     "qty": 25,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Place the prepared apple and raisins in a clean jar. Add enough bottled mineral or spring water to completely cover the fruit.",
+    "2. Cover the jar and ferment at 20–24°C (68–75°F) for roughly 3 days until bubbly, fruit floats, and the liquid smells pleasantly fruity. Strain the fruit and keep the liquid."
+   ],
+   "notes": [
+    "Apple Yeast Water (Days 1–3): 1 red apple, medium size, washed, cored, finely chopped/shredded; 25 g raisins; bottled mineral or spring water, enough to cover the fruit (not costed). Equipment: clean glass jar for yeast water, fine-mesh strainer."
+   ]
+  },
+  {
+   "name": "Pasta Madre (10-Day Build)",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Apple yeast water, strained",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Strong flour 00 or type 0",
+     "qty": 225,
+     "unit": "g"
+    },
+    {
+     "item": "Whole rye flour",
+     "qty": 50,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Place the prepared apple and raisins in a clean jar. Add enough bottled mineral or spring water to completely cover the fruit.",
+    "2. Cover the jar and ferment at 20–24°C (68–75°F) for roughly 3 days until bubbly, fruit floats, and the liquid smells pleasantly fruity. Strain the fruit and keep the liquid.",
+    "3. Combine 100 g strained yeast water, 50 g strong 00/type 0 flour, and 50 g whole rye flour.",
+    "4. Mix thoroughly and transfer to a tall container. Ferment at 24–26°C (75–79°F) for 2–3 days until doubled with clear fermentation activity.",
+    "5. Combine 150 g fermented starter with 75 g strong flour and 38 g water.",
+    "6. Ferment at 24–26°C (75–79°F) for 24 hours. Repeat once more on Day 6 (discarding remaining excess starter).",
+    "7. Combine 100 g starter, 100 g strong flour, and 45 g water. Knead into a smooth, firm dough aiming for a final temperature of 24°C (75°F).",
+    "8. Ferment for 4 hours at 28°C (82°F), followed by 20 hours at 18–20°C (64–68°F). Repeat this daily cycle through Day 10.",
+    "9. Maintenance feeding ratio is 1 : 1.2 : 0.42 (e.g., 50 g pasta madre, 60 g strong flour, 25 g water). Knead smooth (24°C final temp) and ferment at 18°C (64°F) for 20 hours (Target pH ~3.9).",
+    "10. Before baking, run 3 consecutive warm refreshments at a 1 : 1 : 0.45 ratio (e.g., 50 g pasta madre, 50 g strong flour, 22.5 g water). Allow each to ferment warm until mature and tripled in volume (Target pH ~4.1) before baking."
+   ],
+   "notes": [
+    "A comprehensive 10-day guide to cultivating and strengthening pasta madre (lievito madre) from scratch using an apple yeast water starter. Built specifically for panettone, pandoro, colomba, and other grandi lievitati. Servings: 1 active pasta madre. Cuisine: Italian.",
+    "Costed from each stage's ingredients listed once: first build (100 g strained yeast water, 50 g strong flour, 50 g whole rye flour), early refreshments (75 g strong flour) and conversion (100 g strong flour). The starter itself and the water (38 g + 45 g) are not costed; daily refreshments after day 10 are not costed.",
+    "Source check: step 3 of the source said \"whole wheat flour\" while the ingredient list says whole rye flour; written as whole rye flour. Equipment: tall fermentation container/jar, digital kitchen scale."
+   ]
+  },
+  {
+   "name": "Panettone Aromatic Mix",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Honey",
+     "qty": 30,
+     "unit": "g"
+    },
+    {
+     "item": "Vanilla pod",
+     "qty": 1,
+     "unit": "units"
+    },
+    {
+     "item": "Orange",
+     "qty": 1,
+     "unit": "units"
+    },
+    {
+     "item": "Lemon",
+     "qty": 1,
+     "unit": "units"
+    }
+   ],
+   "method": [
+    "9:00 PM (Night Before): In a small sealed dish, combine the 30 g of acacia honey, scraped vanilla pod seeds, orange zest, and lemon zest. Mix thoroughly and store in the refrigerator to infuse overnight."
+   ],
+   "notes": [
+    "The Overnight Aromatic Mix: 30 g honey, vanilla pod (seeds scraped), zest of 1 orange, zest of 1 lemon."
+   ]
+  },
+  {
+   "name": "Panettone First Dough (Primo Impasto)",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "recipe": "Pasta Madre (10-Day Build)",
+     "qty": 69
+    },
+    {
+     "item": "High protein flour (Manitoba or panettone flour)",
+     "qty": 240,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 75,
+     "unit": "g"
+    },
+    {
+     "item": "Egg yolks",
+     "qty": 54,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 72,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "2. The First Dough Mix: In your stand mixer bowl, completely dissolve the 75g of sugar into the 120g of water. Tear your 69g of active, 40% hydration stiff starter into small pieces and drop them into the water. Add all 240g of high-protein flour.",
+    "3. Turn the mixer to medium speed (Speed 3 on a KitchenAid) and knead for 10 to 12 minutes until a strong, cohesive dough forms and completely pulls away from the bowl walls.",
+    "4. Add the 72g of soft room-temperature butter in small chunks. Mix until it disappears into the dough matrix.",
+    "5. With the mixer still running, slowly stream in the 54g of egg yolks a little bit at a time. Continue kneading on medium-high speed until the dough passes a perfect windowpane test (total mixing time: 20–25 minutes).",
+    "6. Transfer the smooth dough to a tall, clear container. Cover and let proof at a warm room temperature of 74–78°F (24–26°C) for 12 hours until it grows exactly 3 times its original volume."
+   ],
+   "notes": [
+    "Stiff sourdough starter (pasta madre, built tightly at 40% hydration) 69 g; water 120 g is not costed. Butter softened completely to room temperature."
+   ]
+  },
+  {
+   "name": "Panettone (Sourdough Method)",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 2,
+   "ingredients": [
+    {
+     "recipe": "Panettone First Dough (Primo Impasto)",
+     "qty": 510
+    },
+    {
+     "recipe": "Panettone Aromatic Mix",
+     "qty": 30
+    },
+    {
+     "item": "High protein flour (Manitoba or panettone flour)",
+     "qty": 60,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 129,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 66,
+     "unit": "g"
+    },
+    {
+     "item": "Egg yolks",
+     "qty": 96,
+     "unit": "g"
+    },
+    {
+     "item": "Salt",
+     "qty": 4,
+     "unit": "g"
+    },
+    {
+     "item": "Honey",
+     "qty": 2,
+     "unit": "g"
+    },
+    {
+     "item": "Raisins",
+     "qty": 120,
+     "unit": "g"
+    },
+    {
+     "item": "Candied orange peel",
+     "qty": 60,
+     "unit": "g"
+    },
+    {
+     "item": "Candied lemon peel",
+     "qty": 30,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "Next Day – Second Dough Enrichment & Inclusion Folding",
+    "7. 9:00 AM (Next Morning): Transfer your tripled, puffy First Dough into the stand mixer bowl. Add the 60g of flour and 2g of extra honey.",
+    "8. Knead on low speed for exactly 10 minutes to firmly re-establish the gluten network.",
+    "9. Add the 66g of sugar slowly over 10 minutes, mixing continuously until the dough absorbs the crystals and looks silky.",
+    "10. Gradually add the 96g of egg yolks, the 4g of salt, and all of your prepared overnight Aromatic Mix. Knead steadily until the dough tightens up and cleanly clears the sides of the bowl.",
+    "11. Add the remaining 129g of soft butter in stages, mixing on medium speed for an additional 15 to 20 minutes until the dough becomes incredibly smooth, ultra-elastic, and passes a flawless windowpane test. Critical Temperature Monitor: Keep a close eye on your dough temp with a kitchen thermometer; it must never exceed 28°C (82°F) during this long mix, or the gluten structure will melt. If it runs hot, pack ice around the bowl!",
+    "12. Stop the mixer, add your 120g of raisins, 60g of candied orange peel, and 30g of candied lemon peel. Mix on the absolute lowest speed for 1 to 2 minutes just until the inclusions are distributed evenly.",
+    "",
+    "Pre-Skewering, Final Proofing, and Inverted Stability",
+    "13. Turn the loose, sticky dough out onto a well-buttered countertop. Divide it cleanly into 2 equal pieces using a buttered bench scraper. Shape each into a loose round ball and let rest uncovered on your counter for 20 minutes.",
+    "14. The Pre-Poke Hack: Take your paper molds and drive 2 bamboo sticks straight through the base of each mold, placing them parallel and close to the bottom rim.",
+    "15. Tighten each dough ball by rolling it firmly against the counter, then drop them directly into the pre-skewered molds.",
+    "16. Place the molds on a baking tray and proof in a warm environment at 82–86°F (28–30°C) for 6 to 8 hours until the highest center dome rises to exactly 2 cm below the top rim of the paper mold.",
+    "17. Preheat your oven to 350°F (175°C). Use a razor blade to score a shallow cross across the top crown of each panettone, and place a tiny pat of cold butter right in the center.",
+    "18. Slide the tray into the oven and bake at 350°F (175°C) for 25 to 35 minutes. Insert a digital kitchen thermometer straight into the center of the loaf—it is perfectly baked when the internal core registers 195–200°F (91–93°C).",
+    "19. Remove the screaming hot loaves from the oven. Immediately turn them completely upside down, suspending them by their built-in bamboo sticks over a large stockpot or deep cardboard box. Let hang undisturbed for 12 hours to completely stabilize the fragile crumb before slicing."
+   ],
+   "notes": [
+    "An authentic Italian panettone leavened entirely with a sweet, stiff sourdough starter (pasta madre), based on the Giorilli formula. Servings: 2 large panettones. Prep 1 hr 10 min, cook 35 min, total 22 hrs 15 min.",
+    "Equipment: dough breaker (heavy-duty hook and paddle attachments), two panettone paper molds (500 g), bamboo sticks for hanging the loaves upside down, baking sheets, kitchen scale, infrared thermometer.",
+    "Second dough = all of the tripled first dough + 60 g panettone flour + 129 g butter + 66 g sugar + 96 g egg yolks + 4 g salt + 2 g extra honey + all of the aromatic mix + 120 g raisins + 60 g candied orange peel + 30 g candied lemon peel.",
+    "Source check: the method said \"2g of barley malt\" while the ingredient list says 2 g extra honey; written as extra honey."
+   ]
+  },
+  {
+   "name": "Vanilla Crème Anglaise",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Whole milk",
+     "qty": 500,
+     "unit": "g"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 210,
+     "unit": "g"
+    },
+    {
+     "item": "Egg yolks",
+     "qty": 200,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 60,
+     "unit": "g"
+    },
+    {
+     "item": "Vanilla pod",
+     "qty": 4,
+     "unit": "units"
+    }
+   ],
+   "method": [
+    "1. Split the vanilla pods lengthways and scrape out the seeds.",
+    "2. Combine the milk, cream, vanilla seeds and pods in a saucepan.",
+    "3. Bring to the boil, remove from the heat, cover and infuse for 1 hour.",
+    "4. For a deeper vanilla flavour, prepare the infusion the day before. Bring the milk, cream and vanilla to the boil, cool completely and refrigerate for 24 hours.",
+    "5. Combine the egg yolks and sugar, whisking immediately until completely homogeneous.",
+    "6. Bring the infused milk and cream back to the boil.",
+    "7. Gradually pour over the yolk mixture while whisking.",
+    "8. Return to the saucepan and cook gently, stirring continuously, until the crème anglaise reaches 83–84°C and coats the back of a spoon.",
+    "9. Pass through a fine chinois, discarding the vanilla pods.",
+    "10. Cool immediately and refrigerate until required."
+   ],
+   "notes": [
+    "Used at 100 g per portion in the Île Flottante; one batch is about 970 g."
+   ]
+  },
+  {
+   "name": "Île Flottante Meringue",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Egg whites",
+     "qty": 300,
+     "unit": "g"
+    },
+    {
+     "item": "Icing sugar",
+     "qty": 200,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Place the egg whites in the bowl of a stand mixer fitted with the whisk attachment.",
+    "2. Whisk at medium speed until the whites begin to foam and develop volume.",
+    "3. Gradually add the icing sugar in 2–3 additions, allowing each addition to dissolve before adding the next.",
+    "4. Continue whisking until a smooth, glossy and supple meringue is obtained. Do not over-whip.",
+    "5. Pipe or shape the meringue into even portions using two spoons.",
+    "6. Dust lightly with icing sugar and leave for 5 minutes.",
+    "7. Dust a second time with icing sugar. This double coating creates a delicate crust during baking.",
+    "8. Bake at 160°C for approximately 4 minutes for medium-sized portions.",
+    "9. For larger individual or sharing-size îles flottantes, extend the cooking time up to approximately 10 minutes, depending on size.",
+    "10. The centre should remain soft and light."
+   ],
+   "notes": [
+    "Icing sugar for dusting, as required (not costed). The number of pieces was not given in the source."
+   ]
+  },
+  {
+   "name": "Raspberry Coulis (Île Flottante)",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Raspberry purée",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 20,
+     "unit": "g"
+    },
+    {
+     "item": "Lemon juice",
+     "qty": 10,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the raspberry purée, sugar and lemon juice.",
+    "2. Mix until the sugar has completely dissolved.",
+    "3. Pass through a fine chinois.",
+    "4. Keep chilled.",
+    "5. Reserve the fresh raspberries for finishing."
+   ],
+   "notes": [
+    "The 250 g of fresh raspberries listed with this component are kept for finishing and are costed in the Île Flottante (per portion) at 30 g per plate."
+   ]
+  },
+  {
+   "name": "Île Flottante, Raspberry, Pistachio & Vanilla (per portion)",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "recipe": "Vanilla Crème Anglaise",
+     "qty": 100
+    },
+    {
+     "recipe": "Raspberry Coulis (Île Flottante)",
+     "qty": 20
+    },
+    {
+     "item": "Fresh raspberries",
+     "qty": 30,
+     "unit": "g"
+    },
+    {
+     "item": "Pistachio paste",
+     "qty": 8,
+     "unit": "g"
+    },
+    {
+     "item": "Roasted pistachios",
+     "qty": 10,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "Pistachio: Roughly chop the roasted pistachios, keeping a mixture of fine and coarse pieces for texture. Keep dry until service. Loosen the pistachio paste slightly if necessary for clean plating.",
+    "",
+    "Assembly",
+    "1. Pour the cold vanilla crème anglaise into the centre of a chilled shallow bowl.",
+    "2. Position the île flottante carefully in the centre.",
+    "3. Add small points of pistachio paste around the meringue.",
+    "4. Arrange the fresh raspberries naturally around the plate.",
+    "5. Spoon the raspberry coulis between the raspberries.",
+    "6. Finish with the chopped roasted pistachios.",
+    "7. Serve immediately while the meringue retains its delicate exterior and soft centre."
+   ],
+   "notes": [
+    "Per portion: vanilla crème anglaise 100 g, île flottante meringue 1 piece, raspberry coulis 20 g, fresh raspberries 30 g, pistachio paste 8 g, roasted pistachios 10 g.",
+    "The meringue piece is not costed because its weight is not given in the source (see Île Flottante Meringue)."
+   ]
+  },
+  {
+   "name": "Egg Yolk & Chicken Jus Cream",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Whole egg",
+     "qty": 200,
+     "unit": "g"
+    },
+    {
+     "item": "Chicken stock",
+     "qty": 720,
+     "unit": "ml"
+    }
+   ],
+   "method": [
+    "1. Place the eggs into boiling water and cook until hard-boiled.",
+    "2. Cool completely to room temperature.",
+    "3. Separate the yolks from the whites.",
+    "4. Rinse the yolks gently under cold water to remove any remaining egg white.",
+    "5. Pass the yolks through a fine sieve and reserve.",
+    "6. Place the chicken stock into a saucepan and reduce slowly from 720 ml to approximately 30 ml.",
+    "7. As the stock reduces, transfer it progressively into smaller saucepans to prevent the reduction from burning around the sides.",
+    "8. While the reduction is still warm, gradually incorporate it into the sieved egg yolks.",
+    "9. Mix vigorously until completely smooth, homogeneous and creamy.",
+    "10. Adjust seasoning with salt and white pepper.",
+    "11. Keep warm for service."
+   ],
+   "notes": [
+    "Eggs, room temperature: 4 (entered as 4 × 50 g = 200 g). Fine salt and white pepper to taste (not costed)."
+   ]
+  },
+  {
+   "name": "Char Siu Pork",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Pork belly",
+     "qty": 200,
+     "unit": "g"
+    },
+    {
+     "item": "Brown sugar",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "White pepper",
+     "qty": 2,
+     "unit": "g"
+    },
+    {
+     "item": "Chinese five-spice powder",
+     "qty": 2,
+     "unit": "g"
+    },
+    {
+     "item": "Ground ginger",
+     "qty": 2,
+     "unit": "g"
+    },
+    {
+     "item": "Garlic powder",
+     "qty": 5,
+     "unit": "g"
+    },
+    {
+     "item": "MSG",
+     "qty": 10,
+     "unit": "g"
+    },
+    {
+     "item": "Light soy sauce",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Chinese cooking wine",
+     "qty": 20,
+     "unit": "g"
+    },
+    {
+     "item": "Oyster sauce",
+     "qty": 20,
+     "unit": "g"
+    },
+    {
+     "item": "Sesame paste",
+     "qty": 20,
+     "unit": "g"
+    },
+    {
+     "item": "Hoisin sauce",
+     "qty": 40,
+     "unit": "g"
+    },
+    {
+     "item": "Red fermented bean curd",
+     "qty": 15,
+     "unit": "g"
+    },
+    {
+     "item": "Chicken stock",
+     "qty": 60,
+     "unit": "ml"
+    },
+    {
+     "item": "Potato starch",
+     "qty": 15,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. For the best texture, partially freeze the pork belly before processing into a coarse mince.",
+    "2. Combine the brown sugar, white pepper, five-spice, ginger, garlic powder, MSG, light soy sauce, Chinese cooking wine, oyster sauce, sesame paste, hoisin sauce and fermented bean curd.",
+    "3. Whisk until completely homogeneous.",
+    "4. Divide the marinade into three equal quantities.",
+    "5. Mix the first third thoroughly through the minced pork.",
+    "6. Place the pork into a hot sauté pan and cook until lightly browned and the fat begins to render.",
+    "7. Add the second third of the marinade and continue cooking until the pork becomes deeply caramelised.",
+    "8. Drain away excessive rendered pork fat.",
+    "9. Add the final third of the marinade followed by the chicken stock.",
+    "10. Bring to a simmer and reduce slightly.",
+    "11. Mix the potato starch with the cold water.",
+    "12. Gradually add sufficient slurry to bind the pork mixture into a glossy, thick consistency.",
+    "13. Remove from the heat and reserve."
+   ],
+   "notes": [
+    "Pork belly, minced. Red fermented bean curd: 1 cube, approximately 15 g. Potato starch slurry: 15 g potato starch with 30 ml cold water (water not costed)."
+   ]
+  },
+  {
+   "name": "Honey Butter (Char Siu Brioche)",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Unsalted butter",
+     "qty": 45,
+     "unit": "g"
+    },
+    {
+     "item": "Brown sugar",
+     "qty": 40,
+     "unit": "g"
+    },
+    {
+     "item": "Honey",
+     "qty": 40,
+     "unit": "g"
+    },
+    {
+     "item": "Fine salt",
+     "qty": 3,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the softened butter, brown sugar, honey and salt.",
+    "2. Mix until smooth and homogeneous.",
+    "3. Reserve at room temperature."
+   ],
+   "notes": [
+    "Butter, softened."
+   ]
+  },
+  {
+   "name": "Hong Kong Char Siu Brioche with Chicken Jus & Egg Yolk Cream",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 2,
+   "ingredients": [
+    {
+     "item": "Brioche bread",
+     "qty": 6,
+     "unit": "units"
+    },
+    {
+     "item": "Whole egg",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 15,
+     "unit": "g"
+    },
+    {
+     "recipe": "Honey Butter (Char Siu Brioche)",
+     "qty": 128
+    },
+    {
+     "recipe": "Char Siu Pork",
+     "qty": 501
+    },
+    {
+     "recipe": "Egg Yolk & Chicken Jus Cream",
+     "qty": 200
+    }
+   ],
+   "method": [
+    "Assembly & Cooking",
+    "1. Preheat the oven to 180°C.",
+    "2. Remove the crusts from the brioche and trim the slices into equal-sized squares.",
+    "3. Cut a central window from one slice of brioche to create a frame.",
+    "4. Whisk the egg and cream together.",
+    "5. Brush one whole slice lightly with the egg and cream mixture.",
+    "6. Position the brioche frame directly on top and press gently to adhere.",
+    "7. Fill the centre generously with the prepared char siu pork.",
+    "8. Brush the exposed brioche lightly with additional egg mixture.",
+    "9. Enclose with another slice of brioche and press gently to seal.",
+    "10. Spread a thin, even layer of honey butter over the top.",
+    "11. Bake at 180°C for approximately 10 minutes, until evenly caramelised and golden brown.",
+    "12. Remove from the oven and rest for 5 minutes before serving.",
+    "",
+    "PLATING",
+    "Place the warm char siu brioche centrally on the plate. Serve with the smooth chicken jus and egg yolk cream."
+   ],
+   "notes": [
+    "Yield: 2 portions. The brioche should be crisp and deeply golden externally, soft inside, with a rich, glossy char siu centre and concentrated savoury egg yolk accompaniment.",
+    "Costed as one full batch of each component for the 2 portions (6 slices of brioche = 3 per sandwich)."
+   ]
+  },
+  {
+   "name": "Lemon Cake",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Flour",
+     "qty": 190,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 170,
+     "unit": "g"
+    },
+    {
+     "item": "Whole egg",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 70,
+     "unit": "g"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 90,
+     "unit": "g"
+    },
+    {
+     "item": "Lemon",
+     "qty": 1,
+     "unit": "units"
+    },
+    {
+     "item": "Baking powder",
+     "qty": 5,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Finely zest the lemon and mix the zest with the sugar to infuse the flavor.",
+    "2. Add the eggs, then the cream, and mix well.",
+    "3. Gently fold in the flour and baking powder, followed by the melted and cooled butter.",
+    "4. Pour the batter into a buttered loaf pan and bake at a low temperature (around 160°C / 320°F) until the center is cooked through.",
+    "5. While the cake is still warm, pour the lemon syrup over it so it absorbs.",
+    "6. Let it cool slightly, unmold, and enjoy (it's even better the next day)."
+   ],
+   "notes": [
+    "For a 20–22 cm loaf pan. 3 eggs (entered as 150 g). 1 large untreated lemon (or 2 small ones). Heavy cream (liquid). Part of the Odashi desserts. The source title mentions a black sesame financier, but the recipe supplied is this lemon cake."
+   ]
+  },
+  {
+   "name": "Lemon Soaking Syrup",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Sugar",
+     "qty": 40,
+     "unit": "g"
+    },
+    {
+     "item": "Lemon juice",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Vanilla pod",
+     "qty": 1,
+     "unit": "units"
+    }
+   ],
+   "method": [
+    "Pour the lemon syrup over the cake while it is still warm so it absorbs."
+   ],
+   "notes": [
+    "Soaking syrup: 100 g water (not costed), 40 g sugar, 50 g lemon juice, 1 vanilla pod. For the Lemon Cake."
+   ]
+  },
+  {
+   "name": "Dark Miso Mou Caramel",
+   "category": "Special Meals",
+   "portions": 8,
+   "ingredients": [
+    {
+     "item": "Whipping cream",
+     "qty": 95,
+     "unit": "g"
+    },
+    {
+     "item": "Glucose syrup",
+     "qty": 30,
+     "unit": "g"
+    },
+    {
+     "item": "Dark miso paste",
+     "qty": 10,
+     "unit": "g"
+    },
+    {
+     "item": "Granulated sugar",
+     "qty": 45,
+     "unit": "g"
+    },
+    {
+     "item": "Milk chocolate 40%",
+     "qty": 10,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 20,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Heat the cream mixture: In a saucepan, combine the cream, glucose syrup, and dark miso. Heat gently, bringing to just below boiling point. Keep warm.",
+    "2. Make the caramel: In a clean saucepan, prepare a dry caramel by melting the granulated sugar gradually over medium heat without stirring. Once the sugar is fully caramelized (deep amber), slowly deglaze with the hot miso-cream mixture, stirring constantly to avoid lumps. Return to the heat and cook until the caramel reaches 106 °C.",
+    "3. Finish the caramel: Remove from heat. Add the milk chocolate and butter. Emulsify using a spatula or hand blender until smooth and glossy.",
+    "4. Mold & freeze: Pour the caramel into 8 cavities. Allow to cool, then freeze until solid."
+   ],
+   "notes": [
+    "Milk chocolate: Valrhona Jivara 40%. Makes 8 cavities."
+   ]
+  },
+  {
+   "name": "Yuzu Matcha Ice Cream",
+   "category": "Special Meals",
+   "portions": 1,
+   "yield_g": 998,
+   "ingredients": [
+    {
+     "item": "Whole milk",
+     "qty": 454,
+     "unit": "g"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 175,
+     "unit": "g"
+    },
+    {
+     "item": "Skimmed milk powder",
+     "qty": 44,
+     "unit": "g"
+    },
+    {
+     "item": "Maltodextrin",
+     "qty": 85,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Dextrose",
+     "qty": 75,
+     "unit": "g"
+    },
+    {
+     "item": "Neutral stabilizer",
+     "qty": 5,
+     "unit": "g"
+    },
+    {
+     "item": "Yuzu pulp",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Matcha tea",
+     "qty": 10,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "Step 1: In a saucepan, combine the whole milk and heavy cream. Heat gently to 40°C.",
+    "Step 2: Add the skimmed milk powder, dextrose, sugar, maltodextrin, matcha tea, and stabilizer. Stir constantly to ensure everything dissolves evenly.",
+    "Step 3: Continue heating the mixture to 85°C, stirring continuously to prevent scorching.",
+    "Step 4: Remove from the heat and blend the mixture using an immersion blender until completely smooth and all ingredients are fully dissolved.",
+    "Step 5: Cool the base rapidly to 4°C and allow it to mature in the refrigerator for 6–12 hours. This resting period develops flavor and improves texture.",
+    "Step 6: Once matured, add the yuzu pulp and mix well to incorporate evenly.",
+    "Step 7: Pour the mixture into an ice cream machine and churn until the desired texture is reached.",
+    "Step 8: Transfer the churned ice cream into a container and freeze at –12°C before serving."
+   ],
+   "notes": [
+    "Part of the Odashi desserts (matcha ice cream). Heavy cream. No portion count was given; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Yuzu Cream Cheese",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Cream cheese",
+     "qty": 200,
+     "unit": "g"
+    },
+    {
+     "item": "Mascarpone",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Icing sugar",
+     "qty": 40,
+     "unit": "g"
+    },
+    {
+     "item": "Yuzu juice",
+     "qty": 25,
+     "unit": "g"
+    },
+    {
+     "item": "Lemon",
+     "qty": 0.5,
+     "unit": "units"
+    },
+    {
+     "item": "Gelatin",
+     "qty": 2,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "Tangy layer / quenelle / piping.",
+    "Base: 200 g cream cheese, 50 g mascarpone, 40 g icing sugar.",
+    "Acid balance: 25 g yuzu juice, zest of ½ lemon.",
+    "Stabilizer: 2 g gelatin (optional) for piping stability.",
+    "Whip: to medium stiffness — aim for aerated yet dense mouthfeel.",
+    "Option: fold in 10 % Chantilly for lightness in plating."
+   ],
+   "notes": [
+    "Part of the soaked lemon pound cake dessert. Gelatin is optional in the source and is costed as included."
+   ]
+  },
+  {
+   "name": "Strawberry & Basil Espuma",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Strawberries",
+     "qty": 200,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 20,
+     "unit": "g"
+    },
+    {
+     "item": "Lemon juice",
+     "qty": 10,
+     "unit": "g"
+    },
+    {
+     "item": "Fresh basil",
+     "qty": 15,
+     "unit": "g"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Gelatin",
+     "qty": 1.5,
+     "unit": "g"
+    },
+    {
+     "item": "Glucose",
+     "qty": 10,
+     "unit": "g"
+    },
+    {
+     "item": "N2O cartridge",
+     "qty": 1,
+     "unit": "units"
+    }
+   ],
+   "method": [
+    "Strawberry purée: cook 200 g strawberries, 20 g sugar, 10 g lemon juice — strain fine.",
+    "Basil infusion: steep 15 g fresh basil leaves in warm purée (60 °C, 10 min), chill and strain.",
+    "Base for siphon: 250 g infused purée, 50 g cream, 1 leaf gelatin (or 1.5 g). Optional: 10 g glucose for smooth texture.",
+    "Charge with 1 N₂O cartridge and chill 2 h minimum.",
+    "Profile: light, herbal, and fruity — breaks through the richness."
+   ],
+   "notes": [
+    "Glucose is optional in the source and is costed as included. The source title mentions a coffee espuma, but the espuma supplied is strawberry and basil."
+   ]
+  },
+  {
+   "name": "Pâte à Chocolat (Chocolate Base Biscuit)",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Dark chocolate 70%",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 120,
+     "unit": "g"
+    },
+    {
+     "item": "Whole egg",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Flour",
+     "qty": 40,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Melt the chocolate and butter together.",
+    "2. Whisk eggs with sugar until light.",
+    "3. Add melted chocolate mixture and sifted flour.",
+    "4. Bake in rings at 170°C for 12–14 min. Cool completely."
+   ],
+   "notes": [
+    "3 eggs (entered as 150 g). Pinch of salt (not costed). Dark chocolate 70% (plaque). Part of the chocolate fumé dessert."
+   ]
+  },
+  {
+   "name": "Crumble Noisette (Hazelnut Crumble)",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Flour",
+     "qty": 80,
+     "unit": "g"
+    },
+    {
+     "item": "Ground hazelnuts",
+     "qty": 60,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 60,
+     "unit": "g"
+    },
+    {
+     "item": "Unsalted butter",
+     "qty": 60,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Mix dry ingredients, rub in butter until crumbly.",
+    "2. Bake at 160°C until golden and crunchy."
+   ],
+   "notes": [
+    "Butter: cold cubes. Pinch of fleur de sel (not costed). Part of the chocolate fumé dessert."
+   ]
+  },
+  {
+   "name": "Crème Chocolat",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Dark chocolate",
+     "qty": 200,
+     "unit": "g"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 200,
+     "unit": "ml"
+    },
+    {
+     "item": "Egg yolks",
+     "qty": 36,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 30,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Heat cream and sugar, temper yolks, then pour over chocolate.",
+    "2. Blend smooth and chill overnight before use."
+   ],
+   "notes": [
+    "2 egg yolks (entered as 36 g). Dark chocolate (plaque). Part of the chocolate fumé dessert."
+   ]
+  },
+  {
+   "name": "Glace d'Orge (Barley Ice Cream)",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Whole milk",
+     "qty": 500,
+     "unit": "ml"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 100,
+     "unit": "ml"
+    },
+    {
+     "item": "Sugar",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Egg yolks",
+     "qty": 72,
+     "unit": "g"
+    },
+    {
+     "item": "Toasted barley or malt",
+     "qty": 20,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Infuse toasted barley in hot milk for 30 min.",
+    "2. Strain, reheat, add yolks and sugar, and cook to 83°C.",
+    "3. Chill, churn, and freeze."
+   ],
+   "notes": [
+    "4 egg yolks (entered as 72 g). Part of the chocolate fumé dessert."
+   ]
+  },
+  {
+   "name": "Mousse Vanille Brûlée (Burnt Vanilla Mousse)",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Whipping cream",
+     "qty": 650,
+     "unit": "ml"
+    },
+    {
+     "item": "Vanilla pod",
+     "qty": 1,
+     "unit": "units"
+    },
+    {
+     "item": "Sugar",
+     "qty": 60,
+     "unit": "g"
+    },
+    {
+     "item": "Egg yolks",
+     "qty": 54,
+     "unit": "g"
+    },
+    {
+     "item": "Gelatin sheets",
+     "qty": 3,
+     "unit": "units"
+    }
+   ],
+   "method": [
+    "1. Make a crème anglaise base with cream, vanilla, yolks, and sugar.",
+    "2. Add gelatin, cool, then fold in whipped cream.",
+    "3. Pipe and brûlée surface with a torch before plating."
+   ],
+   "notes": [
+    "Cream 650 ml = 400 ml for the base + 250 ml whipped cream folded in. 3 egg yolks (entered as 54 g). Vanilla pod: Tsara Vanille. Part of the chocolate fumé dessert."
+   ]
+  },
+  {
+   "name": "Tuile Chocolat",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Unsalted butter",
+     "qty": 40,
+     "unit": "g"
+    },
+    {
+     "item": "Icing sugar",
+     "qty": 40,
+     "unit": "g"
+    },
+    {
+     "item": "Flour",
+     "qty": 40,
+     "unit": "g"
+    },
+    {
+     "item": "Cocoa powder",
+     "qty": 10,
+     "unit": "g"
+    },
+    {
+     "item": "Egg whites",
+     "qty": 60,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Mix all ingredients and spread thin on a Silpat.",
+    "2. Bake at 180°C until crisp.",
+    "3. Shape while hot if desired."
+   ],
+   "notes": [
+    "2 egg whites (entered as 60 g). Part of the chocolate fumé dessert. Assembly of the dessert: 1. Place the chocolate base biscuit. 2. Add a layer of hazelnut crumble. 3. Pipe the chocolate cream. 4. Scoop barley ice cream in the center. 5. Top with a dome of brûléed vanilla mousse. 6. Garnish with chocolate tuile and a touch of smoked essence (optional with a cloche)."
+   ]
+  },
+  {
+   "name": "Den Miso",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Sugar",
+     "qty": 3500,
+     "unit": "g"
+    },
+    {
+     "item": "Mirin",
+     "qty": 1.5,
+     "unit": "L"
+    },
+    {
+     "item": "Miso paste",
+     "qty": 4500,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the water, mirin and sugar in a suitable saucepan.",
+    "2. Heat gently, stirring until the sugar is completely dissolved.",
+    "3. Add the miso paste gradually while whisking continuously.",
+    "4. Cook over low heat, stirring regularly, until smooth and evenly combined.",
+    "5. Do not allow the miso to catch on the bottom of the pan.",
+    "6. Cool completely and transfer to clean, labelled containers.",
+    "7. Store refrigerated."
+   ],
+   "notes": [
+    "Japanese sauce recipe 7. Sugar 3.500 kg, water 1.500 L (not costed), mirin 1.500 L, miso paste 4.500 kg. No yield was given; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Karashi Miso",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "recipe": "Den Miso",
+     "qty": 850
+    },
+    {
+     "item": "Rice vinegar",
+     "qty": 250,
+     "unit": "g"
+    },
+    {
+     "item": "Karashi powder",
+     "qty": 30,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Place the Dengaku miso in a mixing bowl.",
+    "2. Add the rice vinegar gradually while whisking until smooth.",
+    "3. Add the karashi powder and whisk thoroughly.",
+    "4. Transfer to a clean, labelled container and refrigerate."
+   ],
+   "notes": [
+    "Japanese sauce recipe 2. Dengaku miso 850 g is the Den Miso recipe."
+   ]
+  },
+  {
+   "name": "Nigiri Sauce",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Soy sauce",
+     "qty": 650,
+     "unit": "g"
+    },
+    {
+     "item": "Mirin",
+     "qty": 250,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 700,
+     "unit": "g"
+    },
+    {
+     "item": "Sesame oil",
+     "qty": 700,
+     "unit": "g"
+    },
+    {
+     "item": "Gochujang",
+     "qty": 50,
+     "unit": "g"
+    },
+    {
+     "item": "Garlic purée",
+     "qty": 50,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the soy sauce, mirin, water and sugar in a saucepan.",
+    "2. Heat gently until the sugar has completely dissolved.",
+    "3. Add the gochujang and garlic purée and whisk until smooth.",
+    "4. Remove from the heat.",
+    "5. Whisk in the sesame oil.",
+    "6. Cool completely and store refrigerated in a clean, labelled container."
+   ],
+   "notes": [
+    "Japanese sauce recipe 3. Water 150 g is not costed. No yield was given; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Yuzu Soy",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Soy sauce",
+     "qty": 125,
+     "unit": "g"
+    },
+    {
+     "item": "Olive oil",
+     "qty": 500,
+     "unit": "g"
+    },
+    {
+     "item": "Yuzu juice",
+     "qty": 200,
+     "unit": "g"
+    },
+    {
+     "item": "Garlic purée",
+     "qty": 25,
+     "unit": "g"
+    },
+    {
+     "item": "Black pepper",
+     "qty": 8,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the soy sauce, yuzu juice and garlic purée.",
+    "2. Whisk until completely incorporated.",
+    "3. Slowly add the olive oil while whisking to form an emulsion.",
+    "4. Add the black pepper and mix thoroughly.",
+    "5. Transfer to a clean, labelled container and refrigerate.",
+    "6. Mix well before use."
+   ],
+   "notes": [
+    "Japanese sauce recipe 4. No yield was given; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Unagi Sauce",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Soy sauce",
+     "qty": 500,
+     "unit": "g"
+    },
+    {
+     "item": "White wine",
+     "qty": 500,
+     "unit": "g"
+    },
+    {
+     "item": "Mirin",
+     "qty": 500,
+     "unit": "g"
+    },
+    {
+     "item": "Unagi",
+     "qty": 250,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 360,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the soy sauce, white wine, mirin and sugar in a saucepan.",
+    "2. Add the unagi.",
+    "3. Bring gently to a simmer.",
+    "4. Reduce over low heat until the sauce develops a glossy consistency and the required flavour concentration.",
+    "5. Strain through a fine sieve.",
+    "6. Cool completely and store refrigerated in a clean, labelled container."
+   ],
+   "notes": [
+    "Japanese sauce recipe 5. No yield was given; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Teriyaki Sauce",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Balsamic vinegar",
+     "qty": 1,
+     "unit": "L"
+    },
+    {
+     "item": "Mirin",
+     "qty": 300,
+     "unit": "ml"
+    },
+    {
+     "item": "Soy sauce",
+     "qty": 2,
+     "unit": "L"
+    },
+    {
+     "item": "Fresh ginger",
+     "qty": 60,
+     "unit": "g"
+    },
+    {
+     "item": "Garlic",
+     "qty": 30,
+     "unit": "g"
+    },
+    {
+     "item": "Green apple",
+     "qty": 500,
+     "unit": "g"
+    },
+    {
+     "item": "Sugar",
+     "qty": 1500,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the balsamic vinegar, water, mirin, soy sauce and sugar in a saucepan.",
+    "2. Add the grated ginger, grated garlic and green apple.",
+    "3. Bring gently to a simmer.",
+    "4. Cook over low heat until the sugar is completely dissolved and the sauce develops the required consistency.",
+    "5. Strain through a fine sieve.",
+    "6. Cool completely and store refrigerated in a clean, labelled container."
+   ],
+   "notes": [
+    "Japanese sauce recipe 6. Water 200 ml is not costed. Ginger and garlic, grated. No yield was given; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Ponzu Sauce",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Lemon",
+     "qty": 1,
+     "unit": "units"
+    },
+    {
+     "item": "Lime",
+     "qty": 1,
+     "unit": "units"
+    },
+    {
+     "item": "Orange",
+     "qty": 1,
+     "unit": "units"
+    },
+    {
+     "item": "Yuzu juice",
+     "qty": 100,
+     "unit": "ml"
+    },
+    {
+     "item": "Soy sauce",
+     "qty": 500,
+     "unit": "ml"
+    },
+    {
+     "item": "Bonito flakes",
+     "qty": 5,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Extract the juice from the lemon, lime and orange.",
+    "2. Combine the citrus juices with the yuzu juice, soy sauce and water.",
+    "3. Add the bonito flakes.",
+    "4. Allow to infuse under refrigeration.",
+    "5. Strain through a fine sieve.",
+    "6. Transfer to a clean, labelled container and keep refrigerated."
+   ],
+   "notes": [
+    "Japanese sauce recipe 8. Water 100 ml is not costed. No yield was given; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Dark & Milk Chocolate Mousse with Crunchy Chocolate",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Dark chocolate 70%",
+     "qty": 400,
+     "unit": "g"
+    },
+    {
+     "item": "Milk chocolate 40%",
+     "qty": 120,
+     "unit": "g"
+    },
+    {
+     "item": "Whipping cream",
+     "qty": 250,
+     "unit": "g"
+    },
+    {
+     "item": "Whole milk",
+     "qty": 100,
+     "unit": "g"
+    },
+    {
+     "item": "Muscovado sugar",
+     "qty": 55,
+     "unit": "g"
+    },
+    {
+     "item": "Egg whites",
+     "qty": 350,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "Chocolate Ganache",
+    "Finely chop the dark chocolate and milk chocolate and place in a bowl.",
+    "Heat the cream and milk together to 80°C.",
+    "Pour the hot liquid over the chopped chocolates in one addition.",
+    "Allow to stand for 30 seconds, then whisk gently from the centre outward until completely smooth and emulsified.",
+    "Leave the ganache at room temperature while preparing the egg whites.",
+    "",
+    "Whipped Egg Whites",
+    "Place the egg whites and muscovado sugar together in the mixing bowl.",
+    "Begin whipping at low speed, then progressively increase the speed.",
+    "Whip until the whites form a light, glossy meringue with soft to medium peaks. Do not overwhip.",
+    "",
+    "Crunchy Chocolate Sheet",
+    "Melt the 100 g dark chocolate gently to approximately 45–50°C.",
+    "Pour onto a sheet of baking paper.",
+    "Cover with a second sheet of baking paper and spread very thinly and evenly with a rolling pin.",
+    "Transfer to the refrigerator and allow to set completely.",
+    "",
+    "Chocolate Mousse",
+    "Ensure the ganache is fluid but no longer hot.",
+    "Fold the whipped egg whites into the ganache in 2 additions.",
+    "For the first addition, mix gently with a whisk to lighten the ganache.",
+    "Add the remaining egg whites and fold carefully from the outside towards the centre.",
+    "Finish folding with a spatula until perfectly homogeneous while retaining maximum aeration.",
+    "Transfer immediately to a container.",
+    "Refrigerate for a minimum of 2 hours.",
+    "",
+    "Assembly",
+    "Remove the chocolate mousse and chocolate sheet from the refrigerator.",
+    "Spoon a layer of mousse into the serving dish.",
+    "Break the thin chocolate sheet into irregular pieces and arrange a layer over the mousse.",
+    "Add another layer of chocolate mousse followed by more crunchy chocolate pieces.",
+    "Continue layering to create a combination of light chocolate mousse and crisp chocolate texture.",
+    "Keep refrigerated until serving."
+   ],
+   "notes": [
+    "Dark chocolate 70% = 300 g for the mousse + 100 g for the crunchy chocolate sheet. The egg whites are folded in raw; use pasteurised egg whites if served to guests. No yield was given; costed as 1 batch."
+   ]
+  },
+  {
+   "name": "Carrot Purée",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "item": "Carrots",
+     "qty": 400,
+     "unit": "g"
+    },
+    {
+     "item": "Whole milk",
+     "qty": 500,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Combine the carrots and milk in a saucepan.",
+    "2. Simmer gently until the carrots are completely tender and the milk has reduced.",
+    "3. Blend until perfectly smooth and silky. Adjust the consistency with a little cooking milk if required.",
+    "4. Pass through a fine chinois and reserve."
+   ],
+   "notes": [
+    "Carrots, peeled and sliced. Full-fat milk."
+   ]
+  },
+  {
+   "name": "Carrot Crème Pâtissière",
+   "category": "Special Meals",
+   "portions": 1,
+   "ingredients": [
+    {
+     "recipe": "Carrot Purée",
+     "qty": 550
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 30,
+     "unit": "g"
+    },
+    {
+     "item": "Egg yolks",
+     "qty": 126,
+     "unit": "g"
+    },
+    {
+     "item": "Cornflour",
+     "qty": 50,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Bring the carrot purée to a gentle boil.",
+    "2. Whisk the egg yolks with the sugar until dissolved.",
+    "3. Add the cornflour and whisk until smooth.",
+    "4. Gradually whisk the hot carrot purée into the egg mixture.",
+    "5. Return to the saucepan and cook over medium heat for approximately 3 minutes, whisking continuously until thickened.",
+    "6. Transfer to a tray, cover with cling film touching the surface, and chill completely."
+   ],
+   "notes": [
+    "7 egg yolks (entered as 126 g)."
+   ]
+  },
+  {
+   "name": "Carrot Soufflé",
+   "category": "Special Meals",
+   "cooking_method": "Bake",
+   "portions": 1,
+   "ingredients": [
+    {
+     "recipe": "Carrot Crème Pâtissière",
+     "qty": 480
+    },
+    {
+     "item": "Egg whites",
+     "qty": 330,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 64,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "1. Whisk the egg whites, gradually adding the sugar to form a soft, glossy meringue.",
+    "2. Loosen the chilled carrot crème pâtissière until smooth.",
+    "3. Fold in the spiced carrot reduction.",
+    "4. Fold one-third of the meringue into the carrot mixture to lighten.",
+    "5. Gently fold in the remaining meringue with a spatula until fully incorporated without deflating.",
+    "6. Fill buttered and sugared soufflé moulds to the rim, level the tops, run a thumb around the inside edge, and bake immediately until well risen and lightly coloured."
+   ],
+   "notes": [
+    "11 egg whites (entered as 330 g). Not costed: 80 g spiced carrot reduction (no recipe given in the source), butter and sugar for the moulds. No bake temperature, time or yield was given in the source."
+   ]
+  },
+  {
+   "name": "Mango Gel",
+   "category": "Special Meals",
+   "portions": 1,
+   "yield_g": 217,
+   "ingredients": [
+    {
+     "item": "Mango purée",
+     "qty": 150,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 15,
+     "unit": "g"
+    },
+    {
+     "item": "Agar-agar",
+     "qty": 2,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "Combine the mango purée, water, sugar and agar-agar in a saucepan while cold. Whisk until fully dispersed.",
+    "Bring to a full boil, whisking continuously.",
+    "Maintain a rolling boil for 1 minute to fully activate the agar-agar.",
+    "Pour into a shallow tray or container and refrigerate for 1 hour, or until completely set.",
+    "Cut the gel into pieces and transfer to a high-speed blender.",
+    "Blend until perfectly smooth and glossy.",
+    "Pass through a fine chinois if an ultra-smooth texture is required.",
+    "Transfer to a piping bag and refrigerate until required."
+   ],
+   "notes": [
+    "Yield: 217 g. Water 50 g is not costed. Storage: Store refrigerated at 2–4°C for up to 5 days. Do not freeze, as agar-agar gels lose their texture after freezing and thawing."
+   ]
+  },
+  {
+   "name": "Steamed Meringue",
+   "category": "Special Meals",
+   "portions": 1,
+   "yield_g": 600,
+   "ingredients": [
+    {
+     "item": "Egg whites",
+     "qty": 320,
+     "unit": "g"
+    },
+    {
+     "item": "Caster sugar",
+     "qty": 240,
+     "unit": "g"
+    },
+    {
+     "item": "Gelatin mass",
+     "qty": 42,
+     "unit": "g"
+    }
+   ],
+   "method": [
+    "Combine the egg whites and caster sugar in a heatproof bowl.",
+    "Place over steam or in a combi oven set to 85°C and cook for 12 minutes, stirring occasionally until the sugar is completely dissolved.",
+    "Transfer immediately to a stand mixer fitted with the whisk attachment.",
+    "Add the gelatin mass while the mixture is still hot.",
+    "Whip on high speed until the meringue reaches full volume, is glossy, smooth, and has cooled to approximately 30–35°C.",
+    "Use immediately for plated desserts or transfer to a piping bag and refrigerate until required."
+   ],
+   "notes": [
+    "Yield: approximately 600 g."
+   ]
+  }
+ ]
+}

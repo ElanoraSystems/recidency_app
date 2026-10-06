@@ -4,7 +4,9 @@ import axios from "axios";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useCreate, useList } from "../api/hooks";
+import { useAuth } from "../auth/AuthContext";
 import { Icon } from "../components/icons";
+import { RecipeImportButton } from "../components/RecipeImport";
 import { IngredientAdder, type IngredientAdderHandle, type IngredientPayload } from "../components/IngredientAdder";
 import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { addDays, daysUntil, fmtDate, fmtDateTime, todayIso } from "../lib/date";
@@ -78,15 +80,19 @@ export function Kitchen() {
 function RecipesTab() {
   const { data, isLoading } = useList<Recipe>("recipes", "/kitchen/recipes");
   const [search, setSearch] = useState("");
+  const { user } = useAuth();
   if (isLoading) return <Spinner />;
   const q = search.trim().toLowerCase();
   const shown = (data ?? []).filter((r) => !q || r.name.toLowerCase().includes(q));
   return (
     <div>
-      <input
-        className="mb-4 w-full max-w-sm rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-        placeholder="Search recipes by name…" value={search} onChange={(e) => setSearch(e.target.value)}
-      />
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <input
+          className="w-full max-w-sm rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
+          placeholder="Search recipes by name…" value={search} onChange={(e) => setSearch(e.target.value)}
+        />
+        {user?.user_type === "owner" && <RecipeImportButton />}
+      </div>
       {!data || data.length === 0 ? <EmptyState label="No recipes yet." /> : shown.length === 0 ? <EmptyState label="No recipes match your search." /> : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map((r) => (

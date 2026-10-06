@@ -11,6 +11,7 @@ from app.api.v1 import (
     facilities,
     generic_routes,
     kitchen,
+    recipe_import,
     kitchen_tx,
     maintenance,
     patrol,
@@ -42,6 +43,7 @@ API_PREFIX = "/api/v1"
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(dashboard.router, prefix=API_PREFIX)
 app.include_router(people.router, prefix=API_PREFIX)
+app.include_router(recipe_import.router, prefix=API_PREFIX)
 app.include_router(kitchen.router, prefix=API_PREFIX)
 app.include_router(kitchen_tx.router, prefix=API_PREFIX)
 app.include_router(transactions.router, prefix=API_PREFIX)
