@@ -267,3 +267,22 @@ class GrnLine(Base, UUIDPKMixin):
     # self-contained (the batch row is what stock actually draws from).
     expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
     batch_label: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class PrTemplate(Base, UUIDPKMixin, TimestampMixin):
+    """A saved item list for purchase requests: load it, type quantities, and
+    only the lines with a quantity become the request."""
+
+    __tablename__ = "pr_templates"
+
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class PrTemplateLine(Base, UUIDPKMixin):
+    __tablename__ = "pr_template_lines"
+
+    template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pr_templates.id", ondelete="CASCADE"))
+    item_master_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("item_master.id", ondelete="CASCADE"))
+    description: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)

@@ -19,6 +19,8 @@ from app.models.purchasing import (
     Inventory,
     ItemMaster,
     PoLine,
+    PrTemplate,
+    PrTemplateLine,
     PurchaseOrder,
     PurchaseRequest,
     PurchaseRequestLine,
@@ -249,6 +251,116 @@ async def decide_purchase_request(
     await db.commit()
     await db.refresh(pr)
     return await _pr_out(db, pr)
+
+
+# --------------------------------------------------------------- PR templates
+class PrTemplateLineIn(BaseModel):
+    item_master_id: uuid.UUID
+    description: str | None = Field(default=None, max_length=300)
+
+
+class PrTemplateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    lines: list[PrTemplateLineIn]
+
+
+class PrTemplateLineOut(BaseModel):
+    item_master_id: uuid.UUID
+    item_name: str
+    unit: str
+    description: str | None
+
+
+class PrTemplateOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    lines: list[PrTemplateLineOut]
+
+
+async def _template_out(db: AsyncSession, t: PrTemplate) -> PrTemplateOut:
+    rows = (
+        await db.execute(
+            select(PrTemplateLine, ItemMaster)
+            .join(ItemMaster, ItemMaster.id == PrTemplateLine.item_master_id)
+            .where(PrTemplateLine.template_id == t.id)
+            .order_by(PrTemplateLine.sort_order)
+        )
+    ).all()
+    return PrTemplateOut(
+        id=t.id, name=t.name,
+        lines=[
+            PrTemplateLineOut(item_master_id=im.id, item_name=im.name, unit=im.uom, description=l.description)
+            for l, im in rows
+        ],
+    )
+
+
+async def _save_template(db: AsyncSession, t: PrTemplate, payload: PrTemplateIn) -> None:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(400, "Give the template a name")
+    if not payload.lines:
+        raise HTTPException(400, "A template needs at least one item")
+    if len({l.item_master_id for l in payload.lines}) != len(payload.lines):
+        raise HTTPException(400, "An item can only appear once in a template")
+    clash = (await db.execute(select(PrTemplate.id).where(func.lower(PrTemplate.name) == name.lower(), PrTemplate.id != t.id))).first()
+    if clash:
+        raise HTTPException(400, f"A template named '{name}' already exists")
+    for l in payload.lines:
+        item = await db.get(ItemMaster, l.item_master_id)
+        if not item or not item.active:
+            raise HTTPException(400, "Choose active items from the Item Master")
+    t.name = name
+    db.add(t)
+    await db.flush()
+    await db.execute(delete(PrTemplateLine).where(PrTemplateLine.template_id == t.id))
+    for i, l in enumerate(payload.lines):
+        db.add(PrTemplateLine(
+            template_id=t.id, item_master_id=l.item_master_id, sort_order=i,
+            description=(l.description or "").strip() or None,
+        ))
+
+
+@router.get("/pr-templates", response_model=list[PrTemplateOut])
+async def list_pr_templates(db: AsyncSession = Depends(get_db), _user: User = Depends(purchasing_access)):
+    templates = (await db.execute(select(PrTemplate).order_by(PrTemplate.name))).scalars().all()
+    return [await _template_out(db, t) for t in templates]
+
+
+@router.post("/pr-templates", response_model=PrTemplateOut, status_code=201)
+async def create_pr_template(
+    payload: PrTemplateIn, db: AsyncSession = Depends(get_db), user: User = Depends(purchasing_access)
+):
+    t = PrTemplate(name="", created_by=user.id)
+    await _save_template(db, t, payload)
+    await log_activity(db, user, "Saved PR template", t.name)
+    await db.commit()
+    return await _template_out(db, t)
+
+
+@router.put("/pr-templates/{template_id}", response_model=PrTemplateOut)
+async def update_pr_template(
+    template_id: uuid.UUID, payload: PrTemplateIn, db: AsyncSession = Depends(get_db), user: User = Depends(purchasing_access)
+):
+    t = await db.get(PrTemplate, template_id)
+    if not t:
+        raise HTTPException(404, "Template not found")
+    await _save_template(db, t, payload)
+    await log_activity(db, user, "Updated PR template", t.name)
+    await db.commit()
+    return await _template_out(db, t)
+
+
+@router.delete("/pr-templates/{template_id}", status_code=204)
+async def delete_pr_template(
+    template_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(purchasing_access)
+):
+    t = await db.get(PrTemplate, template_id)
+    if not t:
+        raise HTTPException(404, "Template not found")
+    await log_activity(db, user, "Deleted PR template", t.name)
+    await db.delete(t)
+    await db.commit()
 
 
 # ----------------------------------------------------------- purchase orders

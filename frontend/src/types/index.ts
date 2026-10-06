@@ -380,6 +380,12 @@ export interface PurchaseRequestLine {
   est_cost: number;
 }
 
+export interface PrTemplate {
+  id: string;
+  name: string;
+  lines: { item_master_id: string; item_name: string; unit: string; description: string | null }[];
+}
+
 export interface PurchaseRequest {
   id: string;
   code: string;

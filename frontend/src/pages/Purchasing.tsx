@@ -7,7 +7,7 @@ import { Icon } from "../components/icons";
 import { HistoryPanel, StatusBadge, WorkflowBar, errorText } from "../components/Workflow";
 import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { addDays, fmtDate, todayIso } from "../lib/date";
-import type { CostCenter, CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, Supplier, TxnStatus, PriceHistoryEntry } from "../types";
+import type { CostCenter, CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PrTemplate, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, Supplier, TxnStatus, PriceHistoryEntry } from "../types";
 
 interface GrnLine { id: string; name: string; ordered_qty: number; received_qty: number; unit: string; ordered_price: number; price: number; line_total: number; variance: number; expiry: string | null; batch_label: string | null }
 interface Grn {
@@ -242,6 +242,9 @@ export function NewPurchaseRequestPage() {
     queryFn: async () => (await api.get(`/purchasing/purchase-requests/${id}`)).data,
     enabled: !!id,
   });
+  const { data: templates } = useList<PrTemplate>("pr-templates", "/purchasing/pr-templates");
+  const [templateId, setTemplateId] = useState("");
+  const [tplName, setTplName] = useState("");
   const [edits, setEdits] = useState<Partial<RequestForm> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -271,23 +274,65 @@ export function NewPurchaseRequestPage() {
     return im ? (im.last_price > 0 ? im.last_price : im.avg_price) : 0;
   };
   const total = form.lines.reduce((s, l) => s + l.qty * priceOf(l), 0);
+  const requested = form.lines.filter((l) => l.qty > 0).length;
 
   // Enter adds the next item instead of submitting; only the buttons submit.
   function onKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
     const el = e.target as HTMLElement;
     if (e.key !== "Enter" || el.tagName === "BUTTON" || el.tagName === "TEXTAREA") return;
     e.preventDefault();
-    if (editable && el.closest("tbody")) addLine();
+    if (editable && !templateId && el.closest("tbody")) addLine();
+  }
+
+  // A template is just a saved item list. Loading one lists every item with an
+  // empty quantity; only the lines given a quantity become the request.
+  function loadTemplate(tid: string) {
+    setTemplateId(tid);
+    const t = templates?.find((x) => x.id === tid);
+    if (!t) return setTplName("");
+    setTplName(t.name);
+    patch({ lines: t.lines.map((l) => ({ key: crypto.randomUUID(), itemRef: l.item_master_id, qty: 0, description: l.description ?? "" })) });
+  }
+
+  async function saveTemplate(asNew: boolean) {
+    setError(null);
+    const lines = form.lines.filter((l) => l.itemRef).map((l) => ({ item_master_id: l.itemRef, description: l.description || null }));
+    if (!tplName.trim()) return setError("Give the template a name.");
+    if (!lines.length) return setError("Add at least one item to save as a template.");
+    try {
+      const body = { name: tplName.trim(), lines };
+      const { data } = templateId && !asNew
+        ? await api.put<PrTemplate>(`/purchasing/pr-templates/${templateId}`, body)
+        : await api.post<PrTemplate>("/purchasing/pr-templates", body);
+      qc.invalidateQueries({ queryKey: ["pr-templates"] });
+      setTemplateId(data.id);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }
+
+  async function deleteTemplate() {
+    if (!templateId || !window.confirm(`Delete the template "${tplName}"?`)) return;
+    try {
+      await api.delete(`/purchasing/pr-templates/${templateId}`);
+      qc.invalidateQueries({ queryKey: ["pr-templates"] });
+      setTemplateId("");
+      setTplName("");
+    } catch (err) {
+      setError(errorText(err));
+    }
   }
 
   async function save(submit: boolean) {
     setError(null);
     if (!form.deliveryDate) return setError("Choose the required delivery date.");
     if (!form.costCenter) return setError("Choose a cost center.");
-    if (form.lines.some((l) => !l.itemRef || !(l.qty > 0))) return setError("Every line needs an item from the Item Master and a quantity above zero.");
+    const lines = form.lines.filter((l) => l.qty > 0); // lines left without a quantity are not requested
+    if (!lines.length) return setError("Enter a quantity for at least one item.");
+    if (lines.some((l) => !l.itemRef)) return setError("Every line with a quantity needs an item from the Item Master.");
     const payload = {
       urgency: form.urgency, note: form.note || null, cost_center: form.costCenter, required_delivery_date: form.deliveryDate, submit,
-      lines: form.lines.map((l) => ({ item_master_id: l.itemRef, qty: l.qty, description: l.description || null })),
+      lines: lines.map((l) => ({ item_master_id: l.itemRef, qty: l.qty, description: l.description || null })),
     };
     setBusy(true);
     try {
@@ -310,7 +355,7 @@ export function NewPurchaseRequestPage() {
       <Link to="/purchasing" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Purchasing</Link>
       <PageHeader
         title={isNew ? "New purchase request" : `${doc?.code} — edit`}
-        subtitle="Choose each item from the Item Master, add a quantity and any details. Prices are indicative (last purchase price); the supplier price is set on the purchase order. Press Enter in a line to add the next item."
+        subtitle="Choose each item from the Item Master, add a quantity and any details. Prices are indicative (last purchase price); the supplier price is set on the purchase order. Press Enter in a line to add the next item. Or start from a saved template: enter quantities only, and just the items with a quantity are requested."
       />
       {!editable && <p className="mb-3 text-[13px]" style={{ color: "var(--status-critical)" }}>This request is {doc?.status} and can no longer be edited.</p>}
       <form onSubmit={(e) => e.preventDefault()} onKeyDown={onKeyDown} className="flex flex-col gap-4">
@@ -342,6 +387,25 @@ export function NewPurchaseRequestPage() {
             </label>
           </div>
 
+          <div className="flex max-w-3xl flex-wrap items-end gap-3 rounded-xl border p-3" style={border}>
+            <label className="flex flex-col gap-1 text-[13px] font-medium">Template
+              <select className="rounded-lg border px-3 py-2 text-sm" style={border} value={templateId}
+                onChange={(e) => loadTemplate(e.target.value)}>
+                <option value="">— No template —</option>
+                {templates?.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.lines.length} items)</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-[13px] font-medium">Template name
+              <input className="rounded-lg border px-3 py-2 text-sm" style={border} maxLength={100} placeholder="e.g. Weekly kitchen order"
+                value={tplName} onChange={(e) => setTplName(e.target.value)} />
+            </label>
+            {templateId && <Button type="button" variant="secondary" onClick={() => saveTemplate(false)}>Update template</Button>}
+            <Button type="button" variant="secondary" onClick={() => saveTemplate(true)}>Save as new template</Button>
+            {templateId && (
+              <button type="button" className="pb-2 text-xs font-semibold" style={{ color: "var(--status-critical)" }} onClick={deleteTemplate}>Delete template</button>
+            )}
+          </div>
+
           <div className="overflow-x-auto">
             <Table>
               <thead>
@@ -363,7 +427,7 @@ export function NewPurchaseRequestPage() {
                     </Td>
                     <Td>
                       <input type="number" min={0} step="any" className="w-20 rounded-lg border px-2 py-1.5 text-sm" style={border}
-                        value={line.qty} onChange={(e) => updateLine(line.key, { qty: Number(e.target.value) })} />
+                        placeholder="Qty" value={line.qty || ""} onChange={(e) => updateLine(line.key, { qty: Number(e.target.value) })} />
                     </Td>
                     <Td>{master(line)?.uom ?? "—"}</Td>
                     <Td style={{ color: "var(--ink-500)" }}>{master(line) ? priceOf(line).toFixed(3) : "—"}</Td>
@@ -390,7 +454,7 @@ export function NewPurchaseRequestPage() {
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="secondary" disabled={busy} onClick={() => save(false)}>Save draft</Button>
             <Button type="button" disabled={busy} onClick={() => save(true)}>
-              {busy ? "Working..." : `Submit request (${form.lines.length} item${form.lines.length > 1 ? "s" : ""})`}
+              {busy ? "Working..." : `Submit request (${requested} item${requested === 1 ? "" : "s"})`}
             </Button>
           </div>
         )}

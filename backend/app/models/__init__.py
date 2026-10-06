@@ -35,6 +35,8 @@ from app.models.purchasing import (  # noqa: F401
     Inventory,
     ItemMaster,
     PoLine,
+    PrTemplate,
+    PrTemplateLine,
     PurchaseOrder,
     PurchaseRequest,
     Supplier,
