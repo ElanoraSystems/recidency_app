@@ -21,7 +21,7 @@ from app.models.kitchen import (
     WeeklyMealPlan,
     WeeklyMealPlanEntry,
 )
-from app.models.purchasing import UnitOfMeasure
+from app.models.purchasing import ItemMaster, UnitOfMeasure
 from app.models.user import User
 from app.models.stock import RecipeCostSnapshot
 from app.services import units as unit_conv
@@ -278,6 +278,16 @@ async def _resolve_recipe(
     ).scalars().all()
     stock_by_id = await _resolve_ingredient_stock(db, ingredients)
     uom_by_label, uom_by_id = await _load_uom_map(db)
+    # Item Master price per stock item: the estimate for something never bought.
+    master_price = dict(
+        (
+            await db.execute(
+                select(ItemMaster.stock_id, ItemMaster.last_price).where(
+                    ItemMaster.stock_type == "food", ItemMaster.stock_id.in_(list(stock_by_id) or [uuid.uuid4()])
+                )
+            )
+        ).all()
+    )
 
     ingredient_outs = []
     resolved_for_cost = []
@@ -297,7 +307,9 @@ async def _resolve_recipe(
             # A linked stock item can't actually be deleted (RESTRICT), but
             # guard anyway rather than crash on a stale/missing lookup.
             name = stock.name if stock else "Unknown item"
-            cost_per_unit = float(stock.cost) if stock else 0.0
+            # Moving weighted-average cost (kept when stock runs out), else the
+            # Item Master price for an item never bought.
+            cost_per_unit = (float(stock.cost or 0) or float(master_price.get(stock.id) or 0)) if stock else 0.0
             qty_in_stock_unit, display_unit = _resolve_ingredient_qty(i, stock, uom_by_label, uom_by_id)
         line_cost = _ingredient_line_cost(qty_in_stock_unit, cost_per_unit, yield_pct)
         display_qty = float(i.qty)

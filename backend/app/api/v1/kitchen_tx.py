@@ -286,6 +286,7 @@ async def _post_meal_log(db: AsyncSession, meal: MealLog, user: User) -> None:
             drawn = await stock.post_out(
                 db, stock_type="food", stock_id=item.id, cc_id=meal.cost_center_id, qty=qty,
                 txn_type="MEAL_LOG", txn_id=meal.id, txn_code=meal.code, user=user, on=meal.date,
+                allow_negative=True,  # a meal is logged whether or not stock was recorded
             )
             actual += sum(float(m.total_value) for m in drawn)
             db.add(

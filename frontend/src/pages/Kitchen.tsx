@@ -156,6 +156,16 @@ export function RecipeDetailPage() {
   const uoms = [...(uomsRaw ?? [])].sort((a, b) => a.label.localeCompare(b.label));
   const adderRef = useRef<IngredientAdderHandle>(null);
   const [pendingIngredient, setPendingIngredient] = useState(false);
+  const navigate = useNavigate();
+  // The server refuses while another recipe still uses this one as a sub-recipe.
+  const remove = useMutation({
+    mutationFn: async () => api.delete(`/kitchen/recipes/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["recipes"] });
+      navigate("/kitchen?tab=Recipes");
+    },
+    onError: (err: unknown) => setError(saveErrorMessage(err)),
+  });
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
@@ -250,7 +260,13 @@ export function RecipeDetailPage() {
             <span className="text-[12px]" style={{ color: pendingIngredient ? "var(--status-warning)" : "var(--ink-400)" }}>
               {save.isPending ? "Saving..." : pendingIngredient ? "Unsaved ingredient" : savedAt ? `Saved ${savedAt}` : "No unsaved changes"}
             </span>
-            <Button onClick={saveAll} disabled={save.isPending}>Save</Button>
+            <Button onClick={saveAll} disabled={save.isPending || remove.isPending}>Save</Button>
+            <Button
+              variant="danger" disabled={remove.isPending || save.isPending}
+              onClick={() => { if (window.confirm(`Delete "${recipe.name}"? This can't be undone.`)) remove.mutate(); }}
+            >
+              {remove.isPending ? "Deleting..." : "Delete"}
+            </Button>
           </div>
         }
       />

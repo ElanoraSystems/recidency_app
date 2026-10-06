@@ -15,11 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clock import local_today
 from app.models.kitchen import CostCenter, FoodInventory, FoodInventoryBatch
-from app.models.purchasing import Inventory
+from app.models.purchasing import Inventory, ItemMaster
 from app.models.stock import InventoryBalance, PeriodClose, StockMovement
 from app.models.user import User
 
 EPS = 0.0005  # quantities are stored to 3 decimals
+DEFICIT = "Deficit"  # label of the lot that records stock consumed before it was received
 
 
 class InsufficientStock(HTTPException):
@@ -61,31 +62,44 @@ async def _item(db: AsyncSession, stock_type: str, stock_id: uuid.UUID):
 
 # ------------------------------------------------------------ rollups --
 async def recompute_food_rollup(db: AsyncSession, food_inventory_id: uuid.UUID) -> None:
-    """Rewrites FoodInventory.qty/.cost/.expiry/.batch from its live batches
-    across every location."""
+    """Rewrites FoodInventory.qty/.expiry/.batch from its live batches across
+    every location. Quantity includes any deficit lot (negative); the cost is
+    the moving weighted average and is maintained on receipt, never derived
+    from what happens to be on the shelf."""
     stock = await db.get(FoodInventory, food_inventory_id)
     if not stock:
         return
     batches = (
-        await db.execute(
-            select(FoodInventoryBatch).where(
-                FoodInventoryBatch.food_inventory_id == food_inventory_id, FoodInventoryBatch.qty > 0
-            )
-        )
+        await db.execute(select(FoodInventoryBatch).where(FoodInventoryBatch.food_inventory_id == food_inventory_id))
     ).scalars().all()
-    total_qty = sum(float(b.qty) for b in batches)
-    total_value = sum(float(b.qty) * float(b.cost) for b in batches)
-    old_cost = float(stock.cost or 0)
-    stock.qty = total_qty
-    stock.cost = (total_value / total_qty) if total_qty > 0 else 0.0
-    soonest = min((b for b in batches if b.expiry is not None), key=lambda b: b.expiry, default=None)
+    stock.qty = sum(float(b.qty) for b in batches)
+    live = [b for b in batches if float(b.qty) > 0]
+    soonest = min((b for b in live if b.expiry is not None), key=lambda b: b.expiry, default=None)
     stock.expiry = soonest.expiry if soonest else None
     stock.batch = soonest.batch_label if soonest else None
-    if abs(float(stock.cost) - old_cost) > 0.0005:
-        # Recipes using this ingredient now cost differently: keep a history.
-        from app.services.recipe_costing import snapshot_for_food
 
-        await snapshot_for_food(db, food_inventory_id, "Ingredient cost changed")
+
+async def _set_cost(db: AsyncSession, food: FoodInventory, new_cost: float) -> None:
+    if abs(new_cost - float(food.cost or 0)) < 0.0000005:
+        return
+    food.cost = max(0.0, new_cost)
+    # Recipes using this ingredient now cost differently: keep a history.
+    from app.services.recipe_costing import snapshot_for_food
+
+    await snapshot_for_food(db, food.id, "Average cost changed")
+
+
+async def issue_cost(db: AsyncSession, food: FoodInventory) -> float:
+    """What stock leaving the item is valued at: its moving average cost, or
+    for an item never bought the Item Master price."""
+    if float(food.cost or 0) > 0:
+        return float(food.cost)
+    price = (
+        await db.execute(
+            select(ItemMaster.last_price).where(ItemMaster.stock_type == "food", ItemMaster.stock_id == food.id)
+        )
+    ).scalar_one_or_none()
+    return float(price or 0)
 
 
 async def recompute_general_total(db: AsyncSession, inventory_id: uuid.UUID) -> None:
@@ -117,7 +131,6 @@ async def balance(db: AsyncSession, stock_type: str, stock_id: uuid.UUID, cc_id:
                 select(func.coalesce(func.sum(FoodInventoryBatch.qty), 0)).where(
                     FoodInventoryBatch.food_inventory_id == stock_id,
                     FoodInventoryBatch.cost_center_id == cc_id,
-                    FoodInventoryBatch.qty > 0,
                 )
             )
         ).scalar_one()
@@ -192,14 +205,48 @@ async def post_in(
         raise HTTPException(400, "Quantity must be greater than zero")
     item = await _item(db, stock_type, stock_id)
     batch_id = None
+    extra: list[StockMovement] = []
     if stock_type == "food":
-        batch = FoodInventoryBatch(
-            food_inventory_id=stock_id, batch_label=batch_label, qty=qty, expiry=expiry, cost=unit_cost,
-            received_date=received_date or local_today(), cost_center_id=cc_id,
-        )
-        db.add(batch)
-        await db.flush()
-        batch_id = batch.id
+        # Moving weighted average: blend the receipt into what is on hand. With
+        # nothing on hand (or a deficit) the receipt sets the price.
+        old_qty, old_cost = float(item.qty or 0), float(item.cost or 0)
+        await _set_cost(db, item, (old_qty * old_cost + qty * unit_cost) / (old_qty + qty) if old_qty > EPS else unit_cost)
+        remaining = qty
+        deficit = (
+            await db.execute(
+                select(FoodInventoryBatch)
+                .where(
+                    FoodInventoryBatch.food_inventory_id == stock_id, FoodInventoryBatch.cost_center_id == cc_id,
+                    FoodInventoryBatch.qty < 0,
+                )
+                .with_for_update()
+            )
+        ).scalars().first()
+        if deficit is not None:  # stock consumed before it arrived is covered first
+            cover = _q(min(-float(deficit.qty), remaining))
+            deficit.qty = _q(float(deficit.qty) + cover)
+            remaining = _q(remaining - cover)
+            extra.append(
+                _movement(
+                    txn_type=txn_type, txn_id=txn_id, txn_code=txn_code, stock_type=stock_type, stock_id=stock_id,
+                    item=item, from_cc=None, to_cc=cc_id, qty=cover, unit_cost=unit_cost, user=user,
+                    batch_id=deficit.id, on=on,
+                )
+            )
+        if remaining > EPS:
+            batch = FoodInventoryBatch(
+                food_inventory_id=stock_id, batch_label=batch_label, qty=remaining, expiry=expiry, cost=unit_cost,
+                received_date=received_date or local_today(), cost_center_id=cc_id,
+            )
+            db.add(batch)
+            await db.flush()
+            batch_id = batch.id
+            qty = remaining
+        else:
+            db.add_all(extra)
+            await db.flush()
+            await _rollup(db, stock_type, stock_id)
+            return extra[0]
     else:
         bal = await _locked_balance(db, stock_id, cc_id)
         bal.qty = _q(float(bal.qty) + qty)
@@ -207,18 +254,22 @@ async def post_in(
         txn_type=txn_type, txn_id=txn_id, txn_code=txn_code, stock_type=stock_type, stock_id=stock_id,
         item=item, from_cc=None, to_cc=cc_id, qty=qty, unit_cost=unit_cost, user=user, batch_id=batch_id, on=on,
     )
-    db.add(movement)
+    db.add_all([*extra, movement])
     await db.flush()
     await _rollup(db, stock_type, stock_id)
-    return movement
+    return extra[0] if extra else movement
 
 
 async def post_out(
     db: AsyncSession, *, stock_type: str, stock_id: uuid.UUID, cc_id: uuid.UUID, qty: float,
     txn_type: str, txn_id: uuid.UUID | None, txn_code: str | None, user: User | None, on: date | None = None,
+    allow_negative: bool = False,
 ) -> list[StockMovement]:
-    """Takes stock out of one location (earliest-expiring food batches first).
-    Raises InsufficientStock, writing nothing, if the location has too little."""
+    """Takes stock out of one location (earliest-expiring food batches first),
+    valued at the item's moving average cost. Raises InsufficientStock, writing
+    nothing, if the location has too little - unless allow_negative (meals),
+    in which case the shortfall is recorded as a deficit that a later receipt
+    covers."""
     await ensure_period_open(db, on or local_today())
     qty = _q(qty)
     if qty <= 0:
@@ -228,8 +279,9 @@ async def post_out(
     if stock_type == "food":
         batches = await _fefo_batches(db, stock_id, cc_id)
         available = sum(float(b.qty) for b in batches)
-        if available + EPS < qty:
+        if available + EPS < qty and not allow_negative:
             raise InsufficientStock(item.name, await cost_center_label(db, cc_id), available, qty)
+        cost = await issue_cost(db, item)
         remaining = qty
         for batch in batches:
             if remaining <= EPS:
@@ -241,7 +293,33 @@ async def post_out(
                 _movement(
                     txn_type=txn_type, txn_id=txn_id, txn_code=txn_code, stock_type=stock_type,
                     stock_id=stock_id, item=item, from_cc=cc_id, to_cc=None, qty=take,
-                    unit_cost=float(batch.cost), user=user, batch_id=batch.id, on=on,
+                    unit_cost=cost, user=user, batch_id=batch.id, on=on,
+                )
+            )
+        if remaining > EPS:  # only reachable with allow_negative
+            deficit = (
+                await db.execute(
+                    select(FoodInventoryBatch)
+                    .where(
+                        FoodInventoryBatch.food_inventory_id == stock_id, FoodInventoryBatch.cost_center_id == cc_id,
+                        FoodInventoryBatch.batch_label == DEFICIT,
+                    )
+                    .with_for_update()
+                )
+            ).scalars().first()
+            if deficit is None:
+                deficit = FoodInventoryBatch(
+                    food_inventory_id=stock_id, batch_label=DEFICIT, qty=0, expiry=None, cost=cost,
+                    received_date=local_today(), cost_center_id=cc_id,
+                )
+                db.add(deficit)
+                await db.flush()
+            deficit.qty = _q(float(deficit.qty) - remaining)
+            movements.append(
+                _movement(
+                    txn_type=txn_type, txn_id=txn_id, txn_code=txn_code, stock_type=stock_type, stock_id=stock_id,
+                    item=item, from_cc=cc_id, to_cc=None, qty=remaining, unit_cost=cost, user=user,
+                    batch_id=deficit.id, on=on,
                 )
             )
     else:
@@ -281,6 +359,7 @@ async def post_transfer(
         available = sum(float(b.qty) for b in batches)
         if available + EPS < qty:
             raise InsufficientStock(item.name, await cost_center_label(db, from_cc), available, qty)
+        cost = await issue_cost(db, item)
         remaining = qty
         for batch in batches:
             if remaining <= EPS:
@@ -322,7 +401,7 @@ async def post_transfer(
                 _movement(
                     txn_type=txn_type, txn_id=txn_id, txn_code=txn_code, stock_type=stock_type,
                     stock_id=stock_id, item=item, from_cc=from_cc, to_cc=to_cc, qty=take,
-                    unit_cost=float(batch.cost), user=user, batch_id=dest.id, source_batch_id=batch.id, on=on,
+                    unit_cost=cost, user=user, batch_id=dest.id, source_batch_id=batch.id, on=on,
                 )
             )
     else:
@@ -371,16 +450,32 @@ async def reverse_txn(db: AsyncSession, txn_id: uuid.UUID, user: User | None) ->
         await ensure_period_open(db, posting_date)
     touched: set[tuple[str, uuid.UUID]] = set()
     reversals: list[StockMovement] = []
+    running: dict[uuid.UUID, list[float]] = {}  # food item -> [qty, moving average] as the reversal proceeds
     for m in originals:
         touched.add((m.stock_type, m.stock_id))
         if m.stock_type == "food":
+            if m.stock_id not in running:
+                food = await db.get(FoodInventory, m.stock_id)
+                running[m.stock_id] = [float(food.qty or 0), float(food.cost or 0)]
+            state = running[m.stock_id]
+            if m.to_cost_center_id and not m.from_cost_center_id:
+                # A receipt being undone takes its value back out of the average.
+                left = state[0] - float(m.qty)
+                if left > EPS:
+                    state[1] = max(0.0, (state[0] * state[1] - float(m.qty) * float(m.unit_cost)) / left)
+                state[0] = left
+            elif m.from_cost_center_id and not m.to_cost_center_id:
+                # Stock coming back in at the cost it left at.
+                if state[0] > EPS:
+                    state[1] = (state[0] * state[1] + float(m.qty) * float(m.unit_cost)) / (state[0] + float(m.qty))
+                state[0] += float(m.qty)
             if m.to_cost_center_id and m.batch_id:
                 dest = (
                     await db.execute(
                         select(FoodInventoryBatch).where(FoodInventoryBatch.id == m.batch_id).with_for_update()
                     )
                 ).scalar_one_or_none()
-                if dest is None or float(dest.qty) + EPS < float(m.qty):
+                if dest is None or (dest.batch_label != DEFICIT and float(dest.qty) + EPS < float(m.qty)):
                     raise HTTPException(
                         409,
                         f"Cannot reverse: {m.item_name} received at "
@@ -425,6 +520,8 @@ async def reverse_txn(db: AsyncSession, txn_id: uuid.UUID, user: User | None) ->
     await db.flush()
     for stock_type, stock_id in touched:
         await _rollup(db, stock_type, stock_id)
+    for food_id, (_qty, cost) in running.items():
+        await _set_cost(db, await db.get(FoodInventory, food_id), cost)
     return reversals
 
 
@@ -439,12 +536,12 @@ async def location_balances(
             select(
                 FoodInventory.id, FoodInventory.name, FoodInventory.unit, FoodInventory.category,
                 FoodInventoryBatch.cost_center_id, func.sum(FoodInventoryBatch.qty),
-                func.sum(FoodInventoryBatch.qty * FoodInventoryBatch.cost),
+                func.sum(FoodInventoryBatch.qty) * FoodInventory.cost,
             )
             .join(FoodInventoryBatch, FoodInventoryBatch.food_inventory_id == FoodInventory.id)
-            .where(FoodInventoryBatch.qty > 0)
+            .where(FoodInventoryBatch.qty != 0)
             .group_by(
-                FoodInventory.id, FoodInventory.name, FoodInventory.unit, FoodInventory.category,
+                FoodInventory.id, FoodInventory.name, FoodInventory.unit, FoodInventory.category, FoodInventory.cost,
                 FoodInventoryBatch.cost_center_id,
             )
         )
