@@ -7,7 +7,7 @@ import { createDraftRequest } from "./Purchasing";
 import { BalancesTab, CostOfSalesTab, LocationBreakdown, MovementsTab } from "../components/StockLedger";
 import { errorText } from "../components/Workflow";
 import { Badge, Button, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th } from "../components/ui";
-import { fmtDate, todayIso } from "../lib/date";
+import { daysUntil, fmtDate, todayIso } from "../lib/date";
 import type { CostCenter, FoodInventoryItem, InventoryItem, ItemMasterEntry, ItemMasterTransaction, StockCountDetail, StockCountSummary, Supplier, UnitOfMeasureEntry } from "../types";
 
 // Unified view over general (Inventory) and food (FoodInventory) stock rows
@@ -46,6 +46,25 @@ function toStockRows(stock?: InventoryItem[], foodInventory?: FoodInventoryItem[
   return [...general, ...food];
 }
 
+// One honest status per stock row, most urgent first. An item with no par
+// level and no stock is simply "No stock", not a problem.
+type StockState = "out" | "expired" | "low" | "expiring" | "ok" | "none";
+const STATE_META: Record<StockState, { label: string; tone: "critical" | "warning" | "good" | "neutral"; rank: number }> = {
+  out: { label: "Out of stock", tone: "critical", rank: 0 },
+  expired: { label: "Expired", tone: "critical", rank: 1 },
+  low: { label: "Low stock", tone: "critical", rank: 2 },
+  expiring: { label: "Expiring soon", tone: "warning", rank: 3 },
+  none: { label: "No stock", tone: "neutral", rank: 5 },
+  ok: { label: "In stock", tone: "good", rank: 6 },
+};
+function stockState(r: StockRow): StockState {
+  if (r.qty <= 0) return r.min > 0 || r.max > 0 ? "out" : "none";
+  if (r.expiry && daysUntil(r.expiry) < 0) return "expired";
+  if (r.qty < r.min) return "low";
+  if (r.expiry && daysUntil(r.expiry) <= 7) return "expiring";
+  return "ok";
+}
+
 const TABS = ["Stock", "Balances", "Movements", "Item Master", "Stock Count", "Consumption Cost"] as const;
 const CATEGORIES = [
   "Food", "Dairy", "Meat", "Seafood", "Vegetables", "Frozen", "Bakery", "Dry Goods",
@@ -63,11 +82,11 @@ export function InventoryPage() {
   const { data: foodInventory } = useList<FoodInventoryItem>("food-inventory", "/kitchen/food-inventory");
   const { data: itemMaster } = useList<ItemMasterEntry>("item-master", "/item-master");
 
-  const lowCount =
-    (stock?.filter((i) => i.stock < i.min).length ?? 0) + (foodInventory?.filter((f) => f.qty < f.min).length ?? 0);
-  const totalValue =
-    (stock?.reduce((s, i) => s + i.stock * i.avg_price, 0) ?? 0) +
-    (foodInventory?.reduce((s, f) => s + f.qty * f.cost, 0) ?? 0);
+  const stockRows = toStockRows(stock, foodInventory);
+  const states = stockRows.map(stockState);
+  const needAttention = states.filter((x) => x === "out" || x === "low" || x === "expired").length;
+  const expiringCount = states.filter((x) => x === "expiring").length;
+  const totalValue = stockRows.reduce((s, r) => s + Math.max(0, r.qty) * r.avgPrice, 0);
   const belowReorder = (() => {
     if (!itemMaster) return 0;
     return itemMaster.filter((im) => {
@@ -85,12 +104,13 @@ export function InventoryPage() {
         action={tab === "Item Master" ? <Button onClick={() => setModal(true)}>+ New Item</Button> : undefined}
       />
 
-      {tab !== "Consumption Cost" && <div className="mb-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
+      {tab !== "Consumption Cost" && <div className={`mb-5 grid grid-cols-2 gap-4 ${tab === "Stock" || tab === "Balances" || tab === "Movements" ? "lg:grid-cols-4" : "sm:grid-cols-3"}`}>
         {tab === "Stock" || tab === "Balances" || tab === "Movements" ? (
           <>
-            <StatTile label="Total Items" icon="inventory" value={(stock?.length ?? 0) + (foodInventory?.length ?? 0)} />
-            <StatTile label="Below Minimum" icon="alertTriangle" value={lowCount} progressColor="var(--status-critical)" />
-            <StatTile label="Estimated Value" icon="expenses" value={`KWD ${totalValue.toFixed(0)}`} />
+            <StatTile label="Total Items" icon="inventory" value={stockRows.length} sub={`${stock?.length ?? 0} general · ${foodInventory?.length ?? 0} food`} />
+            <StatTile label="Needs attention" icon="alertTriangle" value={needAttention} tone={needAttention > 0 ? "critical" : "neutral"} sub="Out of stock, low or expired" />
+            <StatTile label="Expiring in 7 days" icon="clock" value={expiringCount} tone={expiringCount > 0 ? "warning" : "neutral"} sub="Use these first" />
+            <StatTile label="Estimated Value" icon="expenses" value={`KWD ${totalValue.toFixed(0)}`} sub="At average cost" />
           </>
         ) : tab === "Item Master" ? (
           <>
@@ -125,7 +145,7 @@ export function InventoryPage() {
       </div>
 
       {tab === "Stock" ? (
-        <StockTab stock={stock} foodInventory={foodInventory} />
+        <StockTab stock={stock} foodInventory={foodInventory} itemMaster={itemMaster} />
       ) : tab === "Balances" ? (
         <BalancesTab />
       ) : tab === "Movements" ? (
@@ -143,35 +163,118 @@ export function InventoryPage() {
   );
 }
 
-function StockTab({ stock, foodInventory }: { stock?: InventoryItem[]; foodInventory?: FoodInventoryItem[] }) {
+function StockTab({ stock, foodInventory, itemMaster }: { stock?: InventoryItem[]; foodInventory?: FoodInventoryItem[]; itemMaster?: ItemMasterEntry[] }) {
   const [detail, setDetail] = useState<StockRow | null>(null);
+  const [search, setSearch] = useState("");
+  const [view, setView] = useState<"all" | "attention" | "out" | "low" | "expiring">("all");
+  const [category, setCategory] = useState("");
+  const [location, setLocation] = useState("");
+  const [kind, setKind] = useState("");
+  const [sort, setSort] = useState<"status" | "name" | "value" | "level">("status");
+  const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
   if (!stock || !foodInventory) return <Spinner />;
-  const rows = toStockRows(stock, foodInventory);
-  if (rows.length === 0) return <EmptyState label="No inventory items yet. Add one from the Item Master tab — stock appears here automatically." />;
+  const all = toStockRows(stock, foodInventory).map((r) => ({ r, state: stockState(r) }));
+  if (all.length === 0) return <EmptyState label="No inventory items yet. Add one from the Item Master tab — stock appears here automatically." />;
+
+  const count = (f: (s: StockState) => boolean) => all.filter((x) => f(x.state)).length;
+  const views = [
+    { id: "all", label: "All", n: all.length },
+    { id: "attention", label: "Needs attention", n: count((s) => s === "out" || s === "low" || s === "expired") },
+    { id: "out", label: "Out of stock", n: count((s) => s === "out") },
+    { id: "low", label: "Low stock", n: count((s) => s === "low") },
+    { id: "expiring", label: "Expiring or expired", n: count((s) => s === "expiring" || s === "expired") },
+  ] as const;
+  const q = search.trim().toLowerCase();
+  const categories = [...new Set(all.map((x) => x.r.category))].sort();
+  const locations = [...new Set(all.map((x) => x.r.location).filter((l): l is string => !!l))].sort();
+  const shown = all
+    .filter(({ r, state }) =>
+      (!q || r.name.toLowerCase().includes(q) || (r.sku ?? "").toLowerCase().includes(q)) &&
+      (!category || r.category === category) && (!location || r.location === location) && (!kind || r.kind === kind) &&
+      (view === "all" || (view === "attention" && ["out", "low", "expired"].includes(state)) || (view === "expiring" && (state === "expiring" || state === "expired")) || view === state))
+    .sort((a, b) =>
+      sort === "name" ? a.r.name.localeCompare(b.r.name)
+      : sort === "value" ? b.r.qty * b.r.avgPrice - a.r.qty * a.r.avgPrice
+      : sort === "level" ? (a.r.max > 0 ? a.r.qty / a.r.max : 9) - (b.r.max > 0 ? b.r.qty / b.r.max : 9)
+      : STATE_META[a.state].rank - STATE_META[b.state].rank || a.r.name.localeCompare(b.r.name));
+
+  // One purchase request for everything running low that has a catalog entry.
+  const reorder = all
+    .filter(({ state }) => state === "out" || state === "low")
+    .map(({ r }) => ({ master: itemMaster?.find((im) => im.stock_id === r.id && im.active), r }))
+    .filter((x): x is { master: ItemMasterEntry; r: StockRow } => !!x.master);
+  async function reorderAll() {
+    setBusy(true);
+    try {
+      const id = await createDraftRequest(reorder.map(({ master, r }) => ({ item_master_id: master.id, qty: Math.max(Math.max(r.max, r.min) - r.qty, 1) })));
+      navigate(`/purchasing/requests/${id}/edit`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const field = "rounded-lg border px-2.5 py-1.5 text-sm";
+  const border = { borderColor: "var(--border-strong)" };
+  const levelColor = (s: StockState) => (s === "ok" ? "var(--status-good)" : s === "expiring" ? "var(--status-warning)" : s === "none" ? "var(--ink-300)" : "var(--status-critical)");
+
   return (
-    <div>
-      <p className="mb-3 text-[13px]" style={{ color: "var(--ink-500)" }}>
-        Read-only stock levels. To add a new item, use the Item Master tab — it creates the catalog entry and the
-        stock record together.
-      </p>
-      <Table>
-        <thead><tr><Th>Item</Th><Th>Category</Th><Th>Location</Th><Th>Stock</Th><Th>Min / Max</Th><Th>Status</Th></tr></thead>
-        <tbody>
-          {rows.map((r) => {
-            const low = r.qty < r.min;
-            return (
-              <tr key={r.id} className="cursor-pointer" onClick={() => setDetail(r)}>
-                <Td className="font-medium">{r.name}<div className="text-xs" style={{ color: "var(--ink-400)" }}>{r.sku ?? (r.kind === "food" ? "Food" : "")}</div></Td>
-                <Td>{r.category}</Td>
-                <Td>{r.location}</Td>
-                <Td>{r.qty} {r.unit}</Td>
-                <Td>{r.min} / {r.max}</Td>
-                <Td><Badge tone={low ? "critical" : "good"}>{low ? "Low Stock" : "In Stock"}</Badge></Td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </Table>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2">
+        {views.map((v) => (
+          <button key={v.id} type="button" onClick={() => setView(v.id)} className="rounded-full border px-3 py-1 text-[12px] font-bold"
+            style={{ borderColor: view === v.id ? "var(--brass-500)" : "var(--border-strong)", background: view === v.id ? "var(--brass-100)" : "var(--surface)", color: view === v.id ? "var(--brass-700)" : "var(--ink-500)" }}>
+            {v.label} <span className="tabular-nums opacity-80">{v.n}</span>
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input className={`${field} min-w-[200px] flex-1 sm:max-w-xs`} style={border} placeholder="Search item or SKU…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select className={field} style={border} value={category} onChange={(e) => setCategory(e.target.value)}>
+          <option value="">All categories</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select className={field} style={border} value={location} onChange={(e) => setLocation(e.target.value)}>
+          <option value="">All locations</option>{locations.map((l) => <option key={l} value={l}>{l}</option>)}
+        </select>
+        <select className={field} style={border} value={kind} onChange={(e) => setKind(e.target.value)}>
+          <option value="">Food and general</option><option value="food">Food only</option><option value="general">General only</option>
+        </select>
+        <select className={field} style={border} value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
+          <option value="status">Sort: most urgent first</option><option value="name">Sort: name</option><option value="value">Sort: highest value</option><option value="level">Sort: lowest level</option>
+        </select>
+        {reorder.length > 0 && <Button variant="secondary" onClick={reorderAll} disabled={busy}>{busy ? "Creating…" : `Request ${reorder.length} low item${reorder.length === 1 ? "" : "s"}`}</Button>}
+        <span className="ml-auto text-[12.5px]" style={{ color: "var(--ink-500)" }}>{shown.length} of {all.length} items</span>
+      </div>
+      {shown.length === 0 ? <EmptyState label="No items match these filters." /> : (
+        <Table>
+          <thead><tr><Th>Item</Th><Th>Category</Th><Th>Location</Th><Th>Stock level</Th><Th>Min / Max</Th><Th>Unit cost</Th><Th>Value</Th><Th>Expiry</Th><Th>Status</Th></tr></thead>
+          <tbody>
+            {shown.map(({ r, state }) => {
+              const du = r.expiry ? daysUntil(r.expiry) : null;
+              const cap = r.max > 0 ? r.max : r.min > 0 ? r.min * 2 : Math.max(r.qty, 1);
+              const meta = STATE_META[state];
+              return (
+                <tr key={`${r.kind}-${r.id}`} className="cursor-pointer" onClick={() => setDetail(r)}>
+                  <Td className="font-medium">{r.name}<div className="text-xs font-normal" style={{ color: "var(--ink-400)" }}>{r.sku ?? (r.kind === "food" ? "Food" : "")}</div></Td>
+                  <Td>{r.category}</Td>
+                  <Td>{r.location ?? "—"}</Td>
+                  <Td>
+                    <div className="font-semibold tabular-nums">{r.qty} {r.unit}</div>
+                    <div className="relative mt-1 h-1.5 w-28 overflow-hidden rounded-full" style={{ background: "var(--surface-sunken)" }}>
+                      <div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, (r.qty / cap) * 100))}%`, background: levelColor(state) }} />
+                      {r.min > 0 && <div className="absolute inset-y-0 w-0.5" style={{ left: `${Math.min(100, (r.min / cap) * 100)}%`, background: "var(--ink-700)" }} title={`Minimum ${r.min}`} />}
+                    </div>
+                  </Td>
+                  <Td className="tabular-nums">{r.min} / {r.max}</Td>
+                  <Td className="tabular-nums">{r.avgPrice > 0 ? r.avgPrice.toFixed(3) : "—"}</Td>
+                  <Td className="tabular-nums">{r.qty > 0 && r.avgPrice > 0 ? (r.qty * r.avgPrice).toFixed(2) : "—"}</Td>
+                  <Td>{r.expiry ? <span style={{ color: du! < 0 ? "var(--status-critical)" : du! <= 7 ? "var(--status-warning)" : undefined, fontWeight: du! <= 7 ? 700 : 400 }}>{fmtDate(r.expiry)}{du! >= 0 && du! <= 7 && <div className="text-xs">{du === 0 ? "today" : `in ${du} day${du === 1 ? "" : "s"}`}</div>}</span> : "—"}</Td>
+                  <Td><Badge tone={meta.tone}>{meta.label}</Badge></Td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </Table>
+      )}
       {detail && <StockDetailModal item={detail} onClose={() => setDetail(null)} />}
     </div>
   );
@@ -181,7 +284,8 @@ function StockDetailModal({ item, onClose }: { item: StockRow; onClose: () => vo
   const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
-  const low = item.qty < item.min;
+  const state = stockState(item);
+  const low = state === "out" || state === "low";
   // Requests are raised for Item Master entries; this stock row's catalog entry.
   const { data: itemMasters } = useList<ItemMasterEntry>("item-master", "/item-master");
   const master = itemMasters?.find((im) => im.stock_id === item.id);
@@ -208,7 +312,7 @@ function StockDetailModal({ item, onClose }: { item: StockRow; onClose: () => vo
       <div className="flex flex-col gap-3 text-[13px]">
         <div className="flex items-center gap-2">
           <Badge>{item.category}</Badge>
-          <Badge tone={low ? "critical" : "good"}>{low ? "Low Stock" : "In Stock"}</Badge>
+          <Badge tone={STATE_META[state].tone}>{STATE_META[state].label}</Badge>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <ProfileBlock title="Stock" rows={[["SKU", item.sku ?? "—"], ["Current stock", `${item.qty} ${item.unit}`], ["Min / Max", `${item.min} / ${item.max} ${item.unit}`]]} />

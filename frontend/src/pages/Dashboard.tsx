@@ -1,37 +1,103 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useList } from "../api/hooks";
 import { useAuth } from "../auth/AuthContext";
 import { BarChartH, catColor } from "../components/charts";
 import { Icon } from "../components/icons";
-import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, StatTile } from "../components/ui";
-import { todayIso } from "../lib/date";
+import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, StatTile, statusTone } from "../components/ui";
+import { daysLabel, daysUntil, todayIso } from "../lib/date";
 import { NewTaskModal } from "./Tasks";
-import type { ApprovalItem, DashboardSummary, InventoryItem, MealCategory, MealLogEntry, TaskItem } from "../types";
+import type { ApprovalItem, DashboardSummary, FoodInventoryItem, InventoryItem, MealCategory, MealLogEntry, PurchaseOrder, PurchaseRequest, StaffMember, TaskItem } from "../types";
+
+// Only fetch what this person's modules need; the keys match the module
+// screens, so the data is shared rather than loaded twice.
+function useModuleList<T>(enabled: boolean, key: string, endpoint: string) {
+  return useQuery<T[]>({ queryKey: [key], queryFn: async () => (await api.get(endpoint)).data, enabled });
+}
+
+interface Attention { key: string; tone: "critical" | "warning" | "info"; kind: string; title: string; sub: string; to: string }
+const TONE_RANK = { critical: 0, warning: 1, info: 2 };
+const APPROVAL_LINK: Record<ApprovalItem["type"], string> = {
+  purchase_request: "/purchasing", purchase_order: "/purchasing", grn: "/purchasing",
+  proposed_menu: "/kitchen", weekly_meal_plan: "/kitchen", waste_log: "/kitchen",
+  asset: "/maintenance", maintenance_confirmation: "/maintenance", leave_request: "/people", task_review: "/tasks?due=review",
+};
 
 export function Dashboard() {
   const { user, hasModule } = useAuth();
   const [modal, setModal] = useState<"task" | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const tasksOn = hasModule("tasks"), inventoryOn = hasModule("inventory"), purchasingOn = hasModule("purchasing"), kitchenOn = hasModule("kitchen");
 
   const { data: summary, isLoading } = useQuery<DashboardSummary>({
     queryKey: ["dashboard-summary"],
     queryFn: async () => (await api.get("/dashboard/summary")).data,
   });
   const { data: approvals } = useList<ApprovalItem>("approvals", "/approvals");
-  const { data: inventory } = useList<InventoryItem>("inventory", "/inventory");
-  const { data: tasks } = useList<TaskItem>("tasks", "/tasks");
+  const { data: tasks } = useModuleList<TaskItem>(tasksOn, "tasks", "/tasks");
+  const { data: staff } = useModuleList<StaffMember>(tasksOn, "staff", "/people/staff");
+  const { data: general } = useModuleList<InventoryItem>(inventoryOn, "inventory", "/inventory");
+  const { data: food } = useModuleList<FoodInventoryItem>(inventoryOn, "food-inventory", "/kitchen/food-inventory");
+  const { data: requests } = useModuleList<PurchaseRequest>(purchasingOn, "purchase-requests", "/purchasing/purchase-requests");
+  const { data: orders } = useModuleList<PurchaseOrder>(purchasingOn, "purchase-orders", "/purchasing/purchase-orders");
+  const { data: meals } = useModuleList<MealLogEntry>(kitchenOn, "meal-log", "/kitchen/meal-log");
 
   if (isLoading || !summary) return <Spinner />;
 
   const today = todayIso();
-  const todaysTasks = tasks?.filter((t) => t.due_date === today) ?? [];
-  const doneToday = todaysTasks.filter((t) => t.status === "Completed" || t.status === "Verified").length;
+  const done = (t: TaskItem) => t.status === "Completed" || t.status === "Verified";
+  const staffName = (id: string | null) => staff?.find((m) => m.id === id)?.name ?? "Unassigned";
+  const todaysTasks = (tasks ?? []).filter((t) => t.due_date === today);
+  const doneToday = todaysTasks.filter(done).length;
   const taskPct = todaysTasks.length ? Math.round((doneToday / todaysTasks.length) * 100) : 0;
+  const overdue = (tasks ?? []).filter((t) => !done(t) && t.due_date < today).sort((a, b) => a.due_date.localeCompare(b.due_date));
+  const todoNow = [...overdue, ...todaysTasks.filter((t) => !done(t))];
+
+  // Stock that needs a person: out, below its minimum, or close to its date.
+  const stock = [
+    ...(general ?? []).map((i) => ({ id: i.id, name: i.name, qty: i.stock, unit: i.unit, min: i.min, max: i.max, expiry: i.expiry })),
+    ...(food ?? []).map((f) => ({ id: f.id, name: f.name, qty: f.qty, unit: f.unit, min: f.min, max: f.max, expiry: f.expiry })),
+  ];
+  const outOrLow = stock.filter((r) => (r.qty <= 0 ? r.min > 0 || r.max > 0 : r.qty < r.min));
+  const expired = stock.filter((r) => r.qty > 0 && r.expiry && daysUntil(r.expiry) < 0);
+  const expiring = stock.filter((r) => r.qty > 0 && r.expiry && daysUntil(r.expiry) >= 0 && daysUntil(r.expiry) <= 7);
+  const stockAttention = outOrLow.length + expired.length;
+
+  const toApprove = (requests ?? []).filter((r) => r.status === "Submitted").length + (orders ?? []).filter((o) => o.status === "Submitted").length;
+  const readyToOrder = (requests ?? []).filter((r) => r.status === "Approved").length;
+  const dueToReceive = (orders ?? []).filter((o) => (o.status === "Approved" || o.status === "Partially Received") && o.expected_date && o.expected_date <= today);
+  const purchasingAction = toApprove + readyToOrder + dueToReceive.length;
+
+  const posted = (meals ?? []).filter((m) => m.status !== "Draft" && m.date === today);
+  const servedToday = posted.reduce((s, m) => s + m.lines.reduce((n, l) => n + l.qty, 0), 0);
+  const consumptionToday = posted.reduce((s, m) => s + m.total, 0);
+
+  const kpis: { key: string; to: string; node: React.ReactNode }[] = [];
+  if (tasksOn) {
+    kpis.push({ key: "today", to: "/tasks?due=today", node: <StatTile label="Today's tasks" icon="tasks" value={`${taskPct}%`} suffix="done" progress={taskPct} sub={`${doneToday} of ${todaysTasks.length} complete`} /> });
+    kpis.push({ key: "overdue", to: "/tasks?due=overdue", node: <StatTile label="Overdue tasks" icon="alertTriangle" value={overdue.length} tone={overdue.length > 0 ? "critical" : "neutral"} sub={overdue.length ? "Need follow-up" : "Nothing overdue"} /> });
+  }
+  if (inventoryOn) kpis.push({ key: "stock", to: "/inventory", node: <StatTile label="Stock needs attention" icon="inventory" value={stockAttention} tone={stockAttention > 0 ? "critical" : "neutral"} sub={`${outOrLow.length} out or low · ${expired.length} expired · ${expiring.length} expiring soon`} /> });
+  if (purchasingOn) kpis.push({ key: "purchasing", to: "/purchasing", node: <StatTile label="Purchasing needs action" icon="purchasing" value={purchasingAction} tone={purchasingAction > 0 ? "warning" : "neutral"} sub={`${toApprove} to approve · ${readyToOrder} to order · ${dueToReceive.length} to receive`} /> });
+  if (kitchenOn) kpis.push({ key: "kitchen", to: "/kitchen", node: <StatTile label="Meals served today" icon="kitchen" value={servedToday} sub={`KWD ${consumptionToday.toFixed(2)} consumption value`} /> });
+
+  // Everything that needs a person, most serious first.
+  const attention: Attention[] = [
+    ...overdue.slice(0, 6).map((t): Attention => ({ key: `t${t.id}`, tone: "critical", kind: "Overdue", title: t.title, sub: `${staffName(t.assignee_id)} · ${daysLabel(daysUntil(t.due_date))}`, to: "/tasks?due=overdue" })),
+    ...outOrLow.slice(0, 6).map((r): Attention => ({ key: `s${r.id}`, tone: "critical", kind: r.qty <= 0 ? "Out of stock" : "Low stock", title: r.name, sub: `${r.qty} ${r.unit} left · minimum ${r.min}`, to: "/inventory" })),
+    ...expired.slice(0, 4).map((r): Attention => ({ key: `x${r.id}`, tone: "critical", kind: "Expired", title: r.name, sub: `${r.qty} ${r.unit} · ${daysLabel(daysUntil(r.expiry!))}`.replace("overdue", "past its date"), to: "/inventory" })),
+    ...expiring.slice(0, 4).map((r): Attention => ({ key: `e${r.id}`, tone: "warning", kind: "Expiring", title: r.name, sub: `${r.qty} ${r.unit} · expires ${daysLabel(daysUntil(r.expiry!))}`, to: "/inventory" })),
+    ...dueToReceive.slice(0, 4).map((o): Attention => ({ key: `o${o.id}`, tone: "warning", kind: "Delivery due", title: o.code, sub: `Expected ${daysLabel(daysUntil(o.expected_date!))} · KWD ${o.total.toFixed(3)}`, to: "/purchasing?tab=Purchase%20Orders" })),
+    ...(approvals ?? []).slice(0, 8).map((a): Attention => ({ key: `a${a.type}${a.id}`, tone: "info", kind: "Approval", title: a.title, sub: a.sub, to: APPROVAL_LINK[a.type] ?? "/" })),
+  ].sort((x, y) => TONE_RANK[x.tone] - TONE_RANK[y.tone]);
+  const visible = showAll ? attention : attention.slice(0, 8);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const toneColor = { critical: "var(--status-critical)", warning: "var(--status-warning)", info: "var(--status-info)" };
 
   return (
     <div>
@@ -39,7 +105,7 @@ export function Dashboard() {
         title={`${greeting}, ${user?.name.split(" ")[0]}`}
         subtitle={new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) + " · Residence overview at a glance"}
         action={
-          hasModule("tasks") && (
+          tasksOn && (
             <Button onClick={() => setModal("task")}>
               <span className="flex items-center gap-1.5"><Icon name="plus" className="h-3.5 w-3.5" />New Task</span>
             </Button>
@@ -49,46 +115,69 @@ export function Dashboard() {
 
       {user?.user_type === "staff" && <MyAttendanceLeaveCard />}
 
-      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-3">
-        <StatTile
-          label="Today's Tasks" icon="tasks" value={`${taskPct}%`} suffix="done"
-          progress={taskPct} sub={`${doneToday} of ${todaysTasks.length} complete`}
-        />
-        <StatTile
-          label="Inventory" icon="inventory" value={summary.low_stock_items} suffix="low stock"
-          progress={inventory?.length ? (summary.low_stock_items / inventory.length) * 100 : 0}
-          progressColor="var(--status-critical)" sub={`of ${inventory?.length ?? 0} items tracked`}
-        />
-        <StatTile label="Purchasing" icon="purchasing" value={summary.purchasing_pending} suffix="requests" sub="awaiting approval" />
+      <div className="mb-5 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))" }}>
+        {kpis.map((k) => <Link key={k.key} to={k.to} className="block">{k.node}</Link>)}
       </div>
 
-      <Card className="mb-6">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-display text-[15px] font-semibold">Priority alerts</h3>
-          <span className="text-xs" style={{ color: "var(--ink-400)" }}>{approvals?.length ?? 0} total</span>
-        </div>
-        <div className="flex max-h-[260px] flex-col gap-2 overflow-y-auto">
-          {!approvals || approvals.length === 0 ? (
-            <EmptyRow label="All clear — no urgent alerts" />
+      <div className="mb-6 grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <Card>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-display text-[15px] font-semibold">Needs attention</h3>
+            <span className="text-xs" style={{ color: "var(--ink-400)" }}>{attention.length} item{attention.length === 1 ? "" : "s"}</span>
+          </div>
+          {attention.length === 0 ? (
+            <EmptyRow label="All clear — nothing needs attention right now" />
           ) : (
-            approvals.slice(0, 6).map((a) => (
-              <div
-                key={`${a.type}-${a.id}`}
-                className="flex items-start gap-2.5 rounded-lg p-2.5"
-                style={{ background: "var(--status-warning-bg)" }}
-              >
-                <Icon name="alertTriangle" className="mt-0.5 h-4 w-4 shrink-0" />
-                <div className="min-w-0" style={{ color: "var(--status-warning)" }}>
-                  <div className="truncate text-[12.5px] font-semibold">{a.title}</div>
-                  <div className="truncate text-[11.5px] opacity-80">{a.sub}</div>
-                </div>
-              </div>
-            ))
+            <div className="flex flex-col">
+              {visible.map((a) => (
+                <Link key={a.key} to={a.to} className="flex items-center gap-3 border-t py-2.5 first:border-t-0 first:pt-0" style={{ borderColor: "var(--border)" }}>
+                  <span className="w-[92px] shrink-0 text-[11px] font-extrabold uppercase tracking-wide" style={{ color: toneColor[a.tone] }}>{a.kind}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-semibold">{a.title}</div>
+                    <div className="truncate text-[12px]" style={{ color: "var(--ink-500)" }}>{a.sub}</div>
+                  </div>
+                  <span className="text-[12px] font-semibold" style={{ color: "var(--brass-600)" }}>Open</span>
+                </Link>
+              ))}
+              {attention.length > 8 && (
+                <button type="button" className="mt-2 self-start text-[12.5px] font-semibold" style={{ color: "var(--brass-600)" }} onClick={() => setShowAll((v) => !v)}>
+                  {showAll ? "Show fewer" : `Show all ${attention.length}`}
+                </button>
+              )}
+            </div>
           )}
-        </div>
-      </Card>
+        </Card>
 
-      {hasModule("kitchen") && <KitchenConsumptionCard />}
+        {tasksOn && (
+          <Card>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-display text-[15px] font-semibold">Tasks to do now</h3>
+              <Link to="/tasks" className="text-xs font-semibold" style={{ color: "var(--brass-600)" }}>All tasks</Link>
+            </div>
+            {todoNow.length === 0 ? (
+              <EmptyRow label={todaysTasks.length ? "Everything due today is done" : "No tasks due today"} />
+            ) : (
+              <div className="flex flex-col">
+                {todoNow.slice(0, 8).map((t) => (
+                  <Link key={t.id} to="/tasks" className="flex items-center gap-3 border-t py-2.5 first:border-t-0 first:pt-0" style={{ borderColor: "var(--border)" }}>
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: t.priority === "High" ? "var(--status-critical)" : t.priority === "Low" ? "var(--status-good)" : "var(--status-warning)" }} title={`${t.priority} priority`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-semibold">{t.title}</div>
+                      <div className="truncate text-[12px]" style={{ color: t.due_date < today ? "var(--status-critical)" : "var(--ink-500)" }}>
+                        {staffName(t.assignee_id)} · {t.due_date < today ? daysLabel(daysUntil(t.due_date)) : "due today"}
+                      </div>
+                    </div>
+                    <Badge tone={statusTone(t.status)}>{t.status}</Badge>
+                  </Link>
+                ))}
+                {todoNow.length > 8 && <div className="pt-2 text-[12px]" style={{ color: "var(--ink-400)" }}>and {todoNow.length - 8} more</div>}
+              </div>
+            )}
+          </Card>
+        )}
+      </div>
+
+      {kitchenOn && <KitchenConsumptionCard />}
 
       {modal === "task" && <NewTaskModal initial={{}} onClose={() => setModal(null)} />}
     </div>

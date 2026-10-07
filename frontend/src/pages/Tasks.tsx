@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { api } from "../api/client";
@@ -6,7 +7,7 @@ import { useCreate, useList } from "../api/hooks";
 import { useAuth } from "../auth/AuthContext";
 import { AttachmentsPanel } from "../components/AttachmentsPanel";
 import { Badge, Button, Card, EmptyState, Modal, PageHeader, Spinner, statusTone, Table, Td, Th } from "../components/ui";
-import { todayIso } from "../lib/date";
+import { daysLabel, daysUntil, todayIso } from "../lib/date";
 import type { Area, StaffMember, TaskCategory, TaskItem } from "../types";
 
 interface TemplateItem { text: string; start_time: string | null; end_time: string | null }
@@ -25,7 +26,10 @@ interface NewTaskInitial {
 }
 
 export function Tasks() {
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Board");
+  const [params, setParams] = useSearchParams();
+  const tab = TABS.find((t) => t === params.get("tab")) ?? "Board";
+  // Keep the other URL filters (due, mine) when only the tab changes.
+  const setTab = (t: (typeof TABS)[number]) => setParams((p) => { const n = new URLSearchParams(p); n.set("tab", t); return n; }, { replace: true });
   const [newTaskFrom, setNewTaskFrom] = useState<NewTaskInitial | null>(null);
   const [templateModal, setTemplateModal] = useState<"add" | null>(null);
 
@@ -83,7 +87,15 @@ function BoardView() {
   const { data: staff } = useList<StaffMember>("staff", "/people/staff");
   const { data: areas } = useList<Area>("areas", "/areas");
   const { user: me } = useAuth();
+  const [params] = useSearchParams();
   const [category, setCategory] = useState("all");
+  const [search, setSearch] = useState("");
+  const [assignee, setAssignee] = useState("");
+  const [priority, setPriority] = useState("");
+  const [due, setDue] = useState(params.get("due") ?? "");
+  const [mineOnly, setMineOnly] = useState(params.get("mine") === "1");
+  const [view, setView] = useState<"board" | "list">("board");
+  const [expanded, setExpanded] = useState<string[]>([]);
   const [detail, setDetail] = useState<TaskItem | null>(null);
   const qc = useQueryClient();
 
@@ -139,56 +151,172 @@ function BoardView() {
   const staffName = (id: string | null) => staff?.find((s) => s.id === id)?.name ?? "Unassigned";
   const areaName = (id: string | null) => areas?.find((a) => a.id === id)?.name ?? "—";
   const categories = Array.from(new Set(tasks?.map((t) => t.category) ?? []));
-  const filtered = tasks?.filter((t) => category === "all" || t.category === category) ?? [];
+  const today = todayIso();
+  const isDone = (t: TaskItem) => t.status === "Completed" || t.status === "Verified";
+  const isLate = (t: TaskItem) => !isDone(t) && t.due_date < today;
+  const q = search.trim().toLowerCase();
+  const filtered = (tasks ?? []).filter((t) =>
+    (category === "all" || t.category === category) && (!assignee || t.assignee_id === assignee) && (!priority || t.priority === priority) &&
+    (!mineOnly || (!!myProfile && t.assignee_id === myProfile.id)) &&
+    (!q || t.title.toLowerCase().includes(q) || (t.description ?? "").toLowerCase().includes(q)) &&
+    (due === "" || (due === "today" && t.due_date === today) || (due === "week" && t.due_date >= today && daysUntil(t.due_date) <= 7)
+      || (due === "overdue" && isLate(t)) || (due === "review" && t.status === "Completed")));
+  const all = tasks ?? [];
+  const summary = [
+    { id: "", label: "Open", n: all.filter((t) => !isDone(t)).length, tone: "var(--ink-900)" },
+    { id: "today", label: "Due today", n: all.filter((t) => t.due_date === today && !isDone(t)).length, tone: "var(--status-warning)" },
+    { id: "overdue", label: "Overdue", n: all.filter(isLate).length, tone: "var(--status-critical)" },
+    { id: "review", label: "Awaiting review", n: all.filter((t) => t.status === "Completed").length, tone: "var(--status-info)" },
+  ];
+  const nextStatus = (t: TaskItem) => STATUSES[Math.min(STATUSES.indexOf(t.status === "Overdue" ? "Pending" : t.status) + 1, STATUSES.length - 1)];
+  const dueText = (t: TaskItem) => (isDone(t) ? t.due_date : `${daysLabel(daysUntil(t.due_date))} · ${t.due_date}`);
+  const checklistDone = (t: TaskItem) => t.checklist.filter((c) => c.done).length;
+  const repeats = (t: TaskItem) => !!t.recurrence && !["None", "One-time"].includes(t.recurrence);
+
+  // One tap moves a task along without opening it.
+  function quickAction(t: TaskItem) {
+    if (t.status === "Completed") {
+      return canReview(t) ? <Button size="sm" disabled={reviewTask.isPending} onClick={() => reviewTask.mutate({ id: t.id, approve: true })}>Verify</Button> : null;
+    }
+    if (t.status === "Verified") return null;
+    const startable = t.status === "Pending" || t.status === "Overdue";
+    return <Button size="sm" variant={startable ? "secondary" : "primary"} disabled={advance.isPending}
+      onClick={() => advance.mutate({ id: t.id, status: startable ? "In Progress" : "Completed" })}>{startable ? "Start" : "Complete"}</Button>;
+  }
 
   if (isLoading) return <Spinner />;
 
+  const field = "rounded-lg border px-2.5 py-1.5 text-sm";
+  const border = { borderColor: "var(--border-strong)" };
+
   return (
     <>
-      <div className="mb-4 flex items-center gap-3">
-        <select className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border-strong)" }}
-          value={category} onChange={(e) => setCategory(e.target.value)}>
-          <option value="all">All categories</option>
-          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <span className="ml-auto text-[12.5px]" style={{ color: "var(--ink-500)" }}>{filtered.length} tasks</span>
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {summary.map((x) => (
+          <button key={x.label} type="button" onClick={() => setDue(x.id)} className="rounded-xl border px-4 py-3 text-left"
+            style={{ borderColor: due === x.id ? "var(--brass-500)" : "var(--border)", background: due === x.id ? "var(--brass-100)" : "var(--surface)" }}>
+            <div className="font-display text-2xl font-semibold tabular-nums" style={{ color: x.n > 0 ? x.tone : "var(--ink-400)" }}>{x.n}</div>
+            <div className="text-[11.5px] font-bold uppercase tracking-wider" style={{ color: "var(--ink-400)" }}>{x.label}</div>
+          </button>
+        ))}
       </div>
 
-      <div className="flex gap-3 overflow-x-auto pb-2">
-        {STATUSES.map((status) => {
-          const items = filtered.filter((t) => t.status === status);
-          return (
-            <div key={status} className="w-[240px] shrink-0">
-              <div className="mb-2 flex items-center justify-between px-1">
-                <span className="text-[12.5px] font-semibold" style={{ color: "var(--ink-700)" }}>{status}</span>
-                <Badge tone={statusTone(status)}>{items.length}</Badge>
-              </div>
-              <div className="flex flex-col gap-2">
-                {items.map((t) => {
-                  const timed = t.checklist.filter((c) => c.start_time && c.end_time);
-                  const span = timed.length
-                    ? `${timed.reduce((min, c) => (c.start_time! < min ? c.start_time! : min), timed[0].start_time!).slice(0, 5)}–`
-                      + `${timed.reduce((max, c) => (c.end_time! > max ? c.end_time! : max), timed[0].end_time!).slice(0, 5)}`
-                    : "";
-                  return (
-                    <Card key={t.id} className="!p-3 cursor-pointer" >
-                      <div onClick={() => setDetail(t)}>
-                        <div className="text-[13px] font-semibold">{t.title}</div>
-                        <div className="mt-1 flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--ink-400)" }}>
-                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: t.priority === "High" ? "var(--status-critical)" : t.priority === "Low" ? "var(--status-good)" : "var(--status-warning)" }} />
-                          {t.priority} · {t.due_date}{span && ` · ${span}`}
-                        </div>
-                        <div className="mt-1.5 text-[11.5px]" style={{ color: "var(--ink-400)" }}>{staffName(t.assignee_id).split(" ")[0]}</div>
-                      </div>
-                    </Card>
-                  );
-                })}
-                {items.length === 0 && <div className="px-1 text-[11.5px]" style={{ color: "var(--ink-300)" }}>None</div>}
-              </div>
-            </div>
-          );
-        })}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <input className={`${field} min-w-[180px] flex-1 sm:max-w-xs`} style={border} placeholder="Search tasks…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select className={field} style={border} value={category} onChange={(e) => setCategory(e.target.value)}>
+          <option value="all">All categories</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select className={field} style={border} value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+          <option value="">Everyone</option>{staff?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <select className={field} style={border} value={priority} onChange={(e) => setPriority(e.target.value)}>
+          <option value="">Any priority</option><option>High</option><option>Medium</option><option>Low</option>
+        </select>
+        <select className={field} style={border} value={due} onChange={(e) => setDue(e.target.value)}>
+          <option value="">Any due date</option><option value="today">Due today</option><option value="week">Next 7 days</option><option value="overdue">Overdue</option><option value="review">Awaiting review</option>
+        </select>
+        {myProfile && (
+          <label className="flex items-center gap-1.5 text-[13px] font-semibold"><input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} />My tasks</label>
+        )}
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-[12.5px]" style={{ color: "var(--ink-500)" }}>{filtered.length} of {all.length} tasks</span>
+          <div className="flex rounded-lg p-0.5" style={{ background: "var(--surface-sunken)" }}>
+            {(["board", "list"] as const).map((v) => (
+              <button key={v} type="button" onClick={() => setView(v)} className="rounded-md px-3 py-1 text-[12.5px] font-bold capitalize"
+                style={{ background: view === v ? "var(--surface)" : "transparent", color: view === v ? "var(--ink-900)" : "var(--ink-500)" }}>{v}</button>
+            ))}
+          </div>
+        </div>
       </div>
+
+      {view === "list" ? (
+        filtered.length === 0 ? <EmptyState label="No tasks match these filters." /> : (
+          <Table>
+            <thead><tr><Th>Task</Th><Th>Category</Th><Th>Assigned to</Th><Th>Area</Th><Th>Priority</Th><Th>Due</Th><Th>Checklist</Th><Th>Status</Th><Th>{" "}</Th></tr></thead>
+            <tbody>
+              {[...filtered].sort((a, b) => Number(isDone(a)) - Number(isDone(b)) || a.due_date.localeCompare(b.due_date)).map((t) => (
+                <tr key={t.id} className="cursor-pointer" onClick={() => setDetail(t)}>
+                  <Td className="font-medium">{t.title}{repeats(t) && <div className="text-xs font-normal" style={{ color: "var(--ink-400)" }}>↻ {t.recurrence}</div>}</Td>
+                  <Td>{t.category}</Td>
+                  <Td>{staffName(t.assignee_id)}</Td>
+                  <Td>{areaName(t.location_id)}</Td>
+                  <Td><Badge tone={t.priority === "High" ? "critical" : t.priority === "Low" ? "good" : "warning"}>{t.priority}</Badge></Td>
+                  <Td><span style={{ color: isLate(t) ? "var(--status-critical)" : undefined, fontWeight: isLate(t) ? 700 : 400 }}>{dueText(t)}</span></Td>
+                  <Td className="tabular-nums">{t.checklist.length ? `${checklistDone(t)}/${t.checklist.length}` : "—"}</Td>
+                  <Td><Badge tone={statusTone(isLate(t) && t.status === "Pending" ? "Overdue" : t.status)}>{isLate(t) && t.status === "Pending" ? "Overdue" : t.status}</Badge></Td>
+                  <Td><div onClick={(e) => e.stopPropagation()}>{quickAction(t)}</div></Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )
+      ) : (
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {STATUSES.map((status) => {
+            // Open work by due date; finished work newest first, showing the latest few until asked for more.
+            const finished = status === "Completed" || status === "Verified";
+            const all = filtered.filter((t) => t.status === status).sort((a, b) => (finished ? b.due_date.localeCompare(a.due_date) : a.due_date.localeCompare(b.due_date)));
+            const capped = finished && !expanded.includes(status) && all.length > 8;
+            const items = capped ? all.slice(0, 8) : all;
+            return (
+              <div key={status} className="w-[270px] shrink-0">
+                <div className="mb-2 flex items-center justify-between px-1">
+                  <span className="text-[12.5px] font-semibold" style={{ color: "var(--ink-700)" }}>{status}</span>
+                  <Badge tone={statusTone(status)}>{all.length}</Badge>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {items.map((t) => {
+                    const timed = t.checklist.filter((c) => c.start_time && c.end_time);
+                    const span = timed.length
+                      ? `${timed.reduce((min, c) => (c.start_time! < min ? c.start_time! : min), timed[0].start_time!).slice(0, 5)}–`
+                        + `${timed.reduce((max, c) => (c.end_time! > max ? c.end_time! : max), timed[0].end_time!).slice(0, 5)}`
+                      : "";
+                    const late = isLate(t);
+                    const pct = t.checklist.length ? (checklistDone(t) / t.checklist.length) * 100 : 0;
+                    return (
+                      <Card key={t.id} className="!p-3 cursor-pointer">
+                        <div onClick={() => setDetail(t)} className="flex flex-col gap-1.5" style={{ borderLeft: late ? "3px solid var(--status-critical)" : "3px solid transparent", paddingLeft: 8, marginLeft: -8 }}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="text-[13px] font-semibold leading-snug">{t.title}</div>
+                            <span className="mt-1 h-2 w-2 shrink-0 rounded-full" title={`${t.priority} priority`}
+                              style={{ background: t.priority === "High" ? "var(--status-critical)" : t.priority === "Low" ? "var(--status-good)" : "var(--status-warning)" }} />
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
+                            <span className="rounded px-1.5 py-0.5 font-semibold" style={{ background: "var(--surface-sunken)", color: "var(--ink-700)" }}>{t.category}</span>
+                            <span style={{ color: late ? "var(--status-critical)" : "var(--ink-500)", fontWeight: late || t.due_date === today ? 700 : 400 }}>{dueText(t)}{span && ` · ${span}`}</span>
+                          </div>
+                          {t.checklist.length > 0 && (
+                            <div className="flex items-center gap-2 text-[11.5px]" style={{ color: "var(--ink-500)" }}>
+                              <div className="h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: "var(--surface-sunken)" }}>
+                                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: pct === 100 ? "var(--status-good)" : "var(--brass-500)" }} />
+                              </div>
+                              <span className="tabular-nums">{checklistDone(t)}/{t.checklist.length}</span>
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]" style={{ color: "var(--ink-500)" }}>
+                            <span className="flex items-center gap-1"><span className="grid h-4 w-4 place-items-center rounded-full text-[9px] font-extrabold" style={{ background: "var(--brass-200)", color: "var(--brass-700)" }}>{staffName(t.assignee_id).charAt(0)}</span>{staffName(t.assignee_id).split(" ")[0]}</span>
+                            {t.location_id && <span>{areaName(t.location_id)}</span>}
+                            {repeats(t) && <span>↻ {t.recurrence}</span>}
+                            {t.comments.length > 0 && <span>{t.comments.length} comment{t.comments.length === 1 ? "" : "s"}</span>}
+                            {t.photos > 0 && <span>{t.photos} photo{t.photos === 1 ? "" : "s"}</span>}
+                          </div>
+                        </div>
+                        {quickAction(t) && <div className="mt-2">{quickAction(t)}</div>}
+                      </Card>
+                    );
+                  })}
+                  {capped && (
+                    <button type="button" className="px-1 text-left text-[12px] font-semibold" style={{ color: "var(--brass-600)" }} onClick={() => setExpanded((e) => [...e, status])}>
+                      Show {all.length - items.length} older
+                    </button>
+                  )}
+                  {items.length === 0 && <div className="px-1 text-[11.5px]" style={{ color: "var(--ink-300)" }}>None</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {detail && (
         <Modal
@@ -271,8 +399,8 @@ function BoardView() {
                 </div>
               )
             ) : detail.status !== "Verified" && (
-              <Button onClick={() => advance.mutate({ id: detail.id, status: STATUSES[Math.min(STATUSES.indexOf(detail.status) + 1, STATUSES.length - 1)] })} disabled={advance.isPending}>
-                Mark as {STATUSES[Math.min(STATUSES.indexOf(detail.status) + 1, STATUSES.length - 1)]}
+              <Button onClick={() => advance.mutate({ id: detail.id, status: nextStatus(detail) })} disabled={advance.isPending}>
+                Mark as {nextStatus(detail)}
               </Button>
             )}
 
