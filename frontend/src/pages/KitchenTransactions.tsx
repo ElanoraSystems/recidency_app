@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useList } from "../api/hooks";
 import { StatusBadge, WorkflowBar, HistoryPanel, errorText } from "../components/Workflow";
+import { RecipePlate } from "../components/RecipePhotos";
+import { useNeeds } from "../components/RecipeCook";
 import { Button, DateRangeFilter, EmptyState, PageHeader, Spinner, Table, Td, Th } from "../components/ui";
-import { fmtDate, todayIso } from "../lib/date";
+import { addDays, fmtDate, todayIso } from "../lib/date";
 import type {
   CostCenter, FoodInventoryItem, MealCategory, MealLogEntry, Recipe, StockBalances, StockTransfer, TxnStatus,
   WasteLog, WasteReason,
@@ -207,8 +209,29 @@ export function WasteTab() {
     (!ccFilter || w.cost_center_id === ccFilter) && (!reasonFilter || w.reason === reasonFilter) &&
     (!statusFilter || w.status === statusFilter));
 
+  // Waste over the last seven days, grouped by reason.
+  const since = addDays(todayIso(), -6);
+  const byReason = new Map<string, number>();
+  for (const w of data ?? []) if (w.date >= since) byReason.set(w.reason, (byReason.get(w.reason) ?? 0) + w.total);
+  const reasonRows = [...byReason].sort((a, b) => b[1] - a[1]);
+  const topReason = reasonRows[0]?.[1] ?? 0;
+
   return (
     <div>
+      {reasonRows.length > 0 && (
+        <div className="mb-4 max-w-xl rounded-xl border p-3" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+          <div className="mb-2 flex items-center justify-between text-[13px]"><b>Waste in the last 7 days</b><span style={{ color: "var(--ink-500)" }}>KWD {reasonRows.reduce((s, r) => s + r[1], 0).toFixed(3)}</span></div>
+          <div className="flex flex-col gap-1.5">
+            {reasonRows.map(([reason, value]) => (
+              <div key={reason} className="grid grid-cols-[110px_minmax(0,1fr)_70px] items-center gap-2 text-[12.5px]">
+                <span className="truncate">{reason}</span>
+                <span className="h-2.5 overflow-hidden rounded-full" style={{ background: "var(--surface-sunken)" }}><span className="block h-full rounded-full" style={{ width: `${(value / topReason) * 100}%`, background: "var(--brass-500)" }} /></span>
+                <span className="text-right font-bold tabular-nums">{value.toFixed(3)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <p className="mb-4 text-[13px]" style={{ color: "var(--ink-500)" }}>
         Log spoiled or wasted stock. Stock is deducted from the selected cost center when the entry is submitted.
       </p>
@@ -310,13 +333,21 @@ export function MealLogPage() {
   const [edits, setEdits] = useState<Partial<MealForm> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [tileSearch, setTileSearch] = useState("");
+  // "Log served" links arrive with the planned dishes, a meal category and a portion count.
+  const [search] = useSearchParams();
+  const linked = search.getAll("recipe");
+  const linkedPortions = Math.max(1, Math.floor(Number(search.get("portions"))) || 1);
 
   const baseline: MealForm = doc
     ? {
         date: doc.date, cost_center_id: doc.cost_center_id, category: doc.category ?? "", notes: doc.notes ?? "",
         lines: doc.lines.map((l) => ({ key: l.id, recipe_id: l.recipe_id ?? "", dish: l.dish, qty: l.qty, unit_cost: l.unit_cost })),
       }
-    : { date: todayIso(), cost_center_id: mainStoreId, category: "", notes: "", lines: [newMealLine()] };
+    : {
+        date: todayIso(), cost_center_id: mainStoreId, category: search.get("category") ?? "", notes: "",
+        lines: linked.length ? linked.map((rid) => ({ ...newMealLine(), recipe_id: rid, qty: linkedPortions })) : [newMealLine()],
+      };
   const form: MealForm = { ...baseline, ...(edits ?? {}) };
   const editable = isNew || doc?.status === "Draft";
   const patch = (p: Partial<MealForm>) => setEdits((e) => ({ ...(e ?? {}), ...p }));
@@ -325,6 +356,21 @@ export function MealLogPage() {
   const recipeCost = (rid: string) => recipes?.find((r) => r.id === rid)?.cost.cost_per_portion ?? 0;
   const lineCost = (l: MealLineForm) => l.qty * (l.recipe_id ? recipeCost(l.recipe_id) : l.unit_cost);
   const total = form.lines.reduce((s, l) => s + lineCost(l), 0);
+
+  // Tapping a dish adds it, or adds a portion if it is already on the meal.
+  const addDish = (rid: string) => {
+    const existing = form.lines.find((l) => l.recipe_id === rid);
+    const kept = form.lines.filter((l) => l.recipe_id || l.dish.trim());
+    patch({ lines: existing ? form.lines.map((l) => (l === existing ? { ...l, qty: l.qty + 1 } : l)) : [...kept, { ...newMealLine(), recipe_id: rid }] });
+  };
+  const tiles = (recipes ?? [])
+    .filter((r) => !tileSearch.trim() || r.name.toLowerCase().includes(tileSearch.trim().toLowerCase()))
+    .sort((a, b) => Number(b.photo_ids.length > 0) - Number(a.photo_ids.length > 0) || a.name.localeCompare(b.name))
+    .slice(0, 12);
+  // Meals can still be logged below zero stock; this only says what would run short at the cost center.
+  const needItems = form.lines.filter((l) => l.recipe_id && l.qty > 0).map((l) => ({ recipe_id: l.recipe_id, portions: l.qty }));
+  const { data: stockCheck } = useNeeds(editable ? needItems : [], form.cost_center_id || undefined);
+  const runningShort = stockCheck?.lines.filter((l) => l.short > 0) ?? [];
 
   const payload = () => ({
     date: form.date, cost_center_id: form.cost_center_id, category: form.category || null, notes: form.notes || null,
@@ -409,6 +455,28 @@ export function MealLogPage() {
           </Field>
         </fieldset>
 
+        {editable && (
+          <div className="flex max-w-4xl flex-col gap-2">
+            <input className={`${fieldCls} max-w-sm`} style={borderStyle} placeholder="Search dishes…" value={tileSearch} onChange={(e) => setTileSearch(e.target.value)} />
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+              {tiles.map((r) => {
+                const qty = form.lines.filter((l) => l.recipe_id === r.id).reduce((s, l) => s + l.qty, 0);
+                return (
+                  <button key={r.id} type="button" onClick={() => addDish(r.id)} className="relative overflow-hidden rounded-lg border text-left"
+                    style={{ borderColor: qty > 0 ? "var(--brass-500)" : "var(--border)", background: "var(--surface)", outline: qty > 0 ? "2px solid var(--brass-500)" : "none" }}>
+                    <RecipePlate cover={r.photo_ids[0]} category={r.category} label="" />
+                    <div className="px-2 py-1.5">
+                      <div className="truncate text-[12.5px] font-bold">{r.name}</div>
+                      <div className="text-[11px]" style={{ color: "var(--ink-500)" }}>{r.cost.unpriced ? "Needs price" : kwd(r.cost.cost_per_portion)}</div>
+                    </div>
+                    {qty > 0 && <span className="absolute right-1.5 top-1.5 rounded-full px-2 py-0.5 text-[12px] font-extrabold" style={{ background: "var(--brass-500)", color: "#1c1607" }}>{qty}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <Table>
             <thead><tr><Th>Item / Dish</Th><Th>Quantity</Th><Th>Unit</Th><Th>Unit Cost</Th><Th>Total Line Cost</Th><Th>{" "}</Th></tr></thead>
@@ -462,9 +530,17 @@ export function MealLogPage() {
           </Table>
         </div>
 
+        {editable && runningShort.length > 0 && (
+          <div className="max-w-3xl rounded-lg px-3 py-2 text-[13px]" style={{ background: "var(--status-warning-bg)", color: "var(--ink-700)" }}>
+            <b style={{ color: "var(--status-warning)" }}>Stock will run short{ccLabel ? ` at ${ccLabel}` : ""}: </b>
+            {runningShort.slice(0, 5).map((l) => `${l.name} ${l.short} ${l.unit}`).join(", ")}{runningShort.length > 5 ? ` and ${runningShort.length - 5} more` : ""}.
+            The meal can still be logged; the shortfall is recorded and covered by the next receipt.
+          </div>
+        )}
+
         {editable ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="secondary" onClick={() => patch({ lines: [...form.lines, newMealLine()] })}>+ Add dish</Button>
+            <Button type="button" variant="secondary" onClick={() => patch({ lines: [...form.lines, newMealLine()] })}>+ Add custom dish</Button>
             <span className="flex-1" />
             {!isNew && <Button type="button" variant="danger" onClick={removeDraft} disabled={busy}>Delete draft</Button>}
             <Button type="submit" variant="secondary" disabled={busy}>{isNew ? "Save draft" : "Save changes"}</Button>

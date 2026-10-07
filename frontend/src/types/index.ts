@@ -206,6 +206,8 @@ export interface Recipe {
   name: string;
   category: string;
   allergens: string[];
+  diet_tags: string[];
+  photo_ids: string[]; // cover first
   notes: string | null;
   prep_loss_pct: number;
   raw_yield_g: number;
@@ -220,6 +222,7 @@ export interface Recipe {
     final_yield_g: number;
     portions: number;
     cost_per_portion: number;
+    unpriced: boolean; // an ingredient has no price yet, so the cost reads too low
   };
 }
 
@@ -707,4 +710,11 @@ export interface RecipeCostPoint {
   cost_per_portion: number;
   portions: number;
   reason: string;
+}
+
+// What a set of dishes needs from stock (POST /kitchen/needs).
+export interface KitchenNeeds {
+  lines: { food_inventory_id: string; item_master_id: string | null; name: string; unit: string; needed: number; have: number; short: number }[];
+  prep: { recipe_id: string; name: string; grams: number }[];
+  max_portions: number | null;
 }

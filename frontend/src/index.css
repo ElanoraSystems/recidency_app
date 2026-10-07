@@ -394,3 +394,15 @@ h1, h2, h3, .font-display {
     stroke-dashoffset: 0 !important;
   }
 }
+
+/* Placeholder for a recipe with no photo: a plate on a category-coloured cloth. */
+.plate-ph { position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; background: linear-gradient(135deg, var(--a), color-mix(in srgb, var(--a) 62%, #2a1a0a)); }
+.plate-ph::before { content: ""; position: absolute; inset: 14% 24%; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #fbf8f1 0 62%, #e8e1d2 100%); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25); }
+
+/* One-page recipe card: hidden on screen, the only thing shown when printing. */
+.print-card { display: none; }
+@media print {
+  body * { visibility: hidden; }
+  .print-card, .print-card * { visibility: visible; }
+  .print-card { display: block; position: absolute; left: 0; top: 0; width: 100%; padding: 24px; color: #000; background: #fff; }
+}

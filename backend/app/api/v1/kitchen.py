@@ -18,6 +18,7 @@ from app.models.kitchen import (
     ProposedMenu,
     Recipe,
     RecipeIngredient,
+    RecipePhoto,
     WeeklyMealPlan,
     WeeklyMealPlanEntry,
 )
@@ -76,6 +77,7 @@ class RecipeIn(BaseModel):
     name: str
     category: str
     allergens: list[str] = []
+    diet_tags: list[str] = []
     notes: str | None = None
     prep_loss_pct: float = 0
     raw_yield_g: float = 1000
@@ -99,6 +101,8 @@ class RecipeCost(BaseModel):
     final_yield_g: float
     portions: int
     cost_per_portion: float
+    # True when any ingredient has no price yet, so the cost reads too low.
+    unpriced: bool = False
 
 
 class RecipeOut(BaseModel):
@@ -106,6 +110,8 @@ class RecipeOut(BaseModel):
     name: str
     category: str
     allergens: list[str]
+    diet_tags: list[str]
+    photo_ids: list[uuid.UUID]  # cover first
     notes: str | None
     prep_loss_pct: float
     raw_yield_g: float
@@ -291,6 +297,7 @@ async def _resolve_recipe(
 
     ingredient_outs = []
     resolved_for_cost = []
+    unpriced = False
     for i in ingredients:
         yield_pct = float(i.yield_pct or 100)
         if i.sub_recipe_id:
@@ -300,6 +307,7 @@ async def _resolve_recipe(
             sub_cost, _ = await _resolve_recipe(db, sub_recipe, visiting)
             name = sub_recipe.name
             cost_per_unit = (sub_cost.total_cost / sub_cost.final_yield_g) if sub_cost.final_yield_g else 0.0
+            unpriced = unpriced or sub_cost.unpriced
             qty_in_stock_unit = float(i.qty)
             display_unit = "g"
         else:
@@ -311,6 +319,7 @@ async def _resolve_recipe(
             # Item Master price for an item never bought.
             cost_per_unit = (float(stock.cost or 0) or float(master_price.get(stock.id) or 0)) if stock else 0.0
             qty_in_stock_unit, display_unit = _resolve_ingredient_qty(i, stock, uom_by_label, uom_by_id)
+        unpriced = unpriced or cost_per_unit <= 0
         line_cost = _ingredient_line_cost(qty_in_stock_unit, cost_per_unit, yield_pct)
         display_qty = float(i.qty)
         resolved_for_cost.append((qty_in_stock_unit, cost_per_unit, yield_pct))
@@ -327,16 +336,23 @@ async def _resolve_recipe(
             )
         )
 
-    return compute_recipe_cost(recipe, resolved_for_cost), ingredient_outs
+    cost = compute_recipe_cost(recipe, resolved_for_cost)
+    cost.unpriced = unpriced
+    return cost, ingredient_outs
 
 
 async def _recipe_out(db: AsyncSession, recipe: Recipe) -> RecipeOut:
     cost, ingredient_outs = await _resolve_recipe(db, recipe)
+    photo_ids = (
+        await db.execute(select(RecipePhoto.id).where(RecipePhoto.recipe_id == recipe.id).order_by(RecipePhoto.position, RecipePhoto.created_at))
+    ).scalars().all()
     return RecipeOut(
         id=recipe.id,
         name=recipe.name,
         category=recipe.category,
         allergens=recipe.allergens or [],
+        diet_tags=recipe.diet_tags or [],
+        photo_ids=list(photo_ids),
         notes=recipe.notes,
         prep_loss_pct=float(recipe.prep_loss_pct or 0),
         raw_yield_g=float(recipe.raw_yield_g or 0),
@@ -495,6 +511,7 @@ async def create_recipe(
         name=payload.name,
         category=payload.category,
         allergens=payload.allergens,
+        diet_tags=payload.diet_tags,
         notes=payload.notes,
         prep_loss_pct=payload.prep_loss_pct,
         raw_yield_g=await _compute_raw_yield_g(db, payload.ingredients),
@@ -526,7 +543,7 @@ async def update_recipe(
     if not recipe:
         raise HTTPException(404, "Recipe not found")
     await _validate_ingredients(db, payload.ingredients, recipe_id=recipe.id)
-    for field in ("name", "category", "allergens", "notes", "prep_loss_pct",
+    for field in ("name", "category", "allergens", "diet_tags", "notes", "prep_loss_pct",
                   "portions", "portion_size_g", "cooking_method", "method"):
         setattr(recipe, field, getattr(payload, field))
     recipe.raw_yield_g = await _compute_raw_yield_g(db, payload.ingredients)

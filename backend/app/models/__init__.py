@@ -27,6 +27,7 @@ from app.models.kitchen import (  # noqa: F401
     ProposedMenu,
     Recipe,
     RecipeIngredient,
+    RecipePhoto,
 )
 from app.models.people import Attendance, LeaveRequest, Shift, StaffProfile  # noqa: F401
 from app.models.purchasing import (  # noqa: F401

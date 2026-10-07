@@ -12,6 +12,8 @@ from app.api.v1 import (
     generic_routes,
     kitchen,
     recipe_import,
+    recipe_photos,
+    kitchen_needs,
     kitchen_tx,
     maintenance,
     patrol,
@@ -44,6 +46,8 @@ app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(dashboard.router, prefix=API_PREFIX)
 app.include_router(people.router, prefix=API_PREFIX)
 app.include_router(recipe_import.router, prefix=API_PREFIX)
+app.include_router(recipe_photos.router, prefix=API_PREFIX)
+app.include_router(kitchen_needs.router, prefix=API_PREFIX)
 app.include_router(kitchen.router, prefix=API_PREFIX)
 app.include_router(kitchen_tx.router, prefix=API_PREFIX)
 app.include_router(transactions.router, prefix=API_PREFIX)

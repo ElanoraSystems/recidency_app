@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Integer, LargeBinary, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -14,6 +14,8 @@ class Recipe(Base, UUIDPKMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(200))
     category: Mapped[str] = mapped_column(String(60))  # Breakfast | Lunch | Dinner | Special Meals
     allergens: Mapped[list] = mapped_column(JSONB, default=list)
+    # Vegetarian, Vegan, ... (the allergens above say what a dish contains).
+    diet_tags: Mapped[list] = mapped_column(JSONB, default=list)
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
     prep_loss_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
     raw_yield_g: Mapped[float] = mapped_column(Numeric(10, 2), default=1000)
@@ -25,6 +27,18 @@ class Recipe(Base, UUIDPKMixin, TimestampMixin):
     portion_size_g: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True, default=None)
     cooking_method: Mapped[str | None] = mapped_column(String(100), nullable=True)
     method: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class RecipePhoto(Base, UUIDPKMixin, TimestampMixin):
+    """A dish picture, stored compressed in the database so it survives
+    deploys (the host has no persistent disk). Position 0 is the cover."""
+
+    __tablename__ = "recipe_photos"
+
+    recipe_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("recipes.id", ondelete="CASCADE"))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    content_type: Mapped[str] = mapped_column(String(40))
+    data: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class RecipeIngredient(Base, UUIDPKMixin):
