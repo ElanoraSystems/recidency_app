@@ -5,7 +5,7 @@ import { api } from "../api/client";
 import { useCreate, useList, useUpdate } from "../api/hooks";
 import { Icon } from "../components/icons";
 import { HistoryPanel, StatusBadge, WorkflowBar, errorText } from "../components/Workflow";
-import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
+import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, Table, Td, Th, statusTone } from "../components/ui";
 import { addDays, fmtDate, todayIso } from "../lib/date";
 import { PurchasingDocuments } from "./PurchasingDocuments";
 import { SupplierProfile } from "./PurchasingSupplier";
