@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -7,6 +7,9 @@ import { Icon } from "../components/icons";
 import { HistoryPanel, StatusBadge, WorkflowBar, errorText } from "../components/Workflow";
 import { Badge, Button, Card, DateRangeFilter, EmptyState, Modal, PageHeader, Spinner, StatTile, Table, Td, Th, statusTone } from "../components/ui";
 import { addDays, fmtDate, todayIso } from "../lib/date";
+import { PurchasingDocuments } from "./PurchasingDocuments";
+import { SupplierProfile } from "./PurchasingSupplier";
+import { PurchasingToday } from "./PurchasingToday";
 import type { CostCenter, CreditNote, FoodInventoryItem, InventoryItem, ItemMasterEntry, PoLine, PrTemplate, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, Supplier, TxnStatus, PriceHistoryEntry } from "../types";
 
 interface GrnLine { id: string; name: string; ordered_qty: number; received_qty: number; unit: string; ordered_price: number; price: number; line_total: number; variance: number; expiry: string | null; batch_label: string | null }
@@ -26,52 +29,61 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-const TABS = ["Purchase Requests", "Templates", "Purchase Orders", "Goods Received", "Shopping Basket", "Spend", "Price Comparison", "Suppliers", "Credit Notes"] as const;
+// Five places, each holding the screens that answer one question. The tab in
+// the URL is either a place or any screen inside one, so older links still work.
+const PLACES = [
+  { id: "Today", tabs: [] as string[] },
+  { id: "Documents", tabs: ["All documents", "Purchase Requests", "Purchase Orders", "Goods Received"] },
+  { id: "Quick order", tabs: ["Templates", "Shopping Basket"] },
+  { id: "Suppliers", tabs: ["Suppliers", "Credit Notes"] },
+  { id: "Insights", tabs: ["Spend", "Price Comparison"] },
+];
+
+// A trail link (?doc=id) opens that document's detail on the tab it lands on.
+function useLinkedDoc(): string | null {
+  return useSearchParams()[0].get("doc");
+}
 
 export function Purchasing() {
   const [params, setParams] = useSearchParams();
-  const tab = TABS.find((t) => t === params.get("tab")) ?? "Purchase Requests";
-  const setTab = (t: (typeof TABS)[number]) => setParams({ tab: t }, { replace: true });
-  const { data: requests } = useList<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
-  const { data: orders } = useList<PurchaseOrder>("purchase-orders", "/purchasing/purchase-orders");
-  const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
-
-  const pending = requests?.filter((r) => r.status === "Submitted").length ?? 0;
-  const openOrders = orders?.filter((o) => o.status !== "Fully Received" && o.status !== "Closed" && o.status !== "Rejected").length ?? 0;
-  const unpaidTotal = orders?.filter((o) => o.payment_status === "Unpaid").reduce((s, o) => s + o.total, 0) ?? 0;
+  const wanted = params.get("tab");
+  const place = PLACES.find((p) => p.id === wanted || p.tabs.includes(wanted ?? "")) ?? PLACES[0];
+  const tab = place.tabs.includes(wanted ?? "") ? wanted! : place.tabs[0];
+  const open = (t: string) => setParams({ tab: t }, { replace: true });
+  const pill = (active: boolean) => ({
+    background: active ? "var(--surface)" : "transparent",
+    color: active ? "var(--ink-900)" : "var(--ink-500)",
+    boxShadow: active ? "var(--shadow-sm)" : "none",
+  });
 
   return (
     <div>
-      <PageHeader title="Purchasing" subtitle="Item Master → Request → Approve → Order → Receive (GRN) → Main Inventory." />
+      <PageHeader title="Purchasing" action={<Link to="/purchasing/requests/new"><Button>+ New request</Button></Link>} />
 
-      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatTile label="Awaiting Approval" icon="purchasing" value={pending} progressColor="var(--status-warning)" />
-        <StatTile label="Open Orders" icon="clock" value={openOrders} />
-        <StatTile label="Unpaid Orders" icon="expenses" value={`KWD ${unpaidTotal.toFixed(0)}`} />
-        <StatTile label="Active Suppliers" icon="people" value={suppliers?.length ?? 0} />
-      </div>
-
-      <div className="mb-5 flex gap-1 rounded-xl p-1" style={{ background: "var(--surface-sunken)", width: "fit-content" }}>
-        {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className="rounded-lg px-3.5 py-1.5 text-[13px] font-semibold"
-            style={{
-              background: tab === t ? "var(--surface)" : "transparent",
-              color: tab === t ? "var(--ink-900)" : "var(--ink-500)",
-              boxShadow: tab === t ? "var(--shadow-sm)" : "none",
-            }}
-          >
-            {t}
+      <div className="mb-4 flex gap-1 overflow-x-auto rounded-xl p-1" style={{ background: "var(--surface-sunken)", width: "fit-content", maxWidth: "100%" }}>
+        {PLACES.map((p) => (
+          <button key={p.id} onClick={() => open(p.tabs[0] ?? p.id)} className="whitespace-nowrap rounded-lg px-3.5 py-1.5 text-[13px] font-semibold" style={pill(place.id === p.id)}>
+            {p.id}
           </button>
         ))}
       </div>
+      {place.tabs.length > 0 && (
+        <div className="mb-5 flex gap-4 overflow-x-auto border-b" style={{ borderColor: "var(--border)" }}>
+          {place.tabs.map((t) => (
+            <button key={t} onClick={() => open(t)} className="whitespace-nowrap border-b-2 px-1 pb-2 text-[13px] font-semibold"
+              style={{ borderColor: tab === t ? "var(--brass-500)" : "transparent", color: tab === t ? "var(--ink-900)" : "var(--ink-500)" }}>
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
 
+      {place.id === "Today" && <PurchasingToday onOpen={open} />}
+      {tab === "All documents" && <PurchasingDocuments />}
       {tab === "Purchase Requests" && <RequestsTab />}
-      {tab === "Templates" && <TemplatesTab />}
       {tab === "Purchase Orders" && <OrdersTab />}
       {tab === "Goods Received" && <GoodsReceivedTab />}
+      {tab === "Templates" && <TemplatesTab />}
       {tab === "Shopping Basket" && <ShoppingBasketTab />}
       {tab === "Spend" && <SpendTab />}
       {tab === "Price Comparison" && <PriceComparisonTab />}
@@ -137,7 +149,7 @@ function RequestsTab() {
   const { data, isLoading } = useList<PurchaseRequest>("purchase-requests", "/purchasing/purchase-requests");
   const qc = useQueryClient();
   // Keep only the id so the open detail follows refetches (status changes).
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(useLinkedDoc());
   const detail = data?.find((pr) => pr.id === detailId) ?? null;
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -267,8 +279,6 @@ function RequestsTab() {
 interface RequestLine { key: string; itemRef: string; qty: number; description: string; legacyName?: string }
 interface RequestForm { urgency: string; costCenter: string; note: string; deliveryDate: string; lines: RequestLine[] }
 
-const newRequestLine = (): RequestLine => ({ key: crypto.randomUUID(), itemRef: "", qty: 1, description: "" });
-
 const inDays = (n: number) => addDays(todayIso(), n);
 
 // Creates a Draft pre-filled from stock shortcuts (basket, low-stock) and
@@ -294,6 +304,9 @@ export function NewPurchaseRequestPage() {
     enabled: !!id,
   });
   const { data: templates } = useList<PrTemplate>("pr-templates", "/purchasing/pr-templates");
+  const { data: foodInventory } = useList<FoodInventoryItem>("food-inventory", "/kitchen/food-inventory");
+  const { data: inventory } = useList<InventoryItem>("inventory", "/inventory");
+  const [itemSearch, setItemSearch] = useState("");
   const [searchParams] = useSearchParams();
   const [templateId, setTemplateId] = useState("");
   const [tplName, setTplName] = useState("");
@@ -309,12 +322,11 @@ export function NewPurchaseRequestPage() {
           legacyName: l.item_master_id ? undefined : l.item_name,
         })),
       }
-    : { urgency: "Medium", costCenter: "", note: "", deliveryDate: "", lines: [newRequestLine()] };
+    : { urgency: "Medium", costCenter: "", note: "", deliveryDate: "", lines: [] };
   const form: RequestForm = { ...baseline, ...(edits ?? {}) };
   const patch = (p: Partial<RequestForm>) => setEdits((e) => ({ ...(e ?? {}), ...p }));
   const updateLine = (key: string, p: Partial<RequestLine>) =>
     patch({ lines: form.lines.map((l) => (l.key === key ? { ...l, ...p } : l)) });
-  const addLine = () => patch({ lines: [...form.lines, newRequestLine()] });
   const removeLine = (key: string) => patch({ lines: form.lines.filter((l) => l.key !== key) });
   const editable = isNew || doc?.status === "Draft";
 
@@ -328,12 +340,47 @@ export function NewPurchaseRequestPage() {
   const total = form.lines.reduce((s, l) => s + l.qty * priceOf(l), 0);
   const requested = form.lines.filter((l) => l.qty > 0).length;
 
-  // Enter adds the next item instead of submitting; only the buttons submit.
+  // Stock and par level live on whichever stock table the item points at.
+  const stockOf = (im?: ItemMasterEntry) => {
+    if (!im) return null;
+    const rec = im.stock_type === "food" ? foodInventory?.find((f) => f.id === im.stock_id) : inventory?.find((i) => i.id === im.stock_id);
+    return rec ? { stock: "qty" in rec ? rec.qty : rec.stock, min: rec.min, max: rec.max } : null;
+  };
+  const onSheet = new Set(form.lines.map((l) => l.itemRef));
+  const matches = itemSearch.trim()
+    ? (itemMaster ?? []).filter((im) => im.active && !onSheet.has(im.id) && im.name.toLowerCase().includes(itemSearch.trim().toLowerCase())).slice(0, 8)
+    : [];
+  const belowMin = (itemMaster ?? []).filter((im) => {
+    const st = stockOf(im);
+    return im.active && !onSheet.has(im.id) && !!st && st.min > 0 && st.stock < st.min;
+  });
+  // New items join the sheet with no quantity: only lines given one are requested.
+  const addItem = (im: ItemMasterEntry, qty = 0) =>
+    patch({ lines: [...form.lines, { key: crypto.randomUUID(), itemRef: im.id, qty, description: "" }] });
+  function addBelowMin() {
+    patch({
+      lines: [
+        ...form.lines,
+        ...belowMin.map((im) => {
+          const st = stockOf(im)!;
+          return { key: crypto.randomUUID(), itemRef: im.id, qty: Math.max(Math.max(st.max, st.min) - st.stock, 1), description: "" };
+        }),
+      ],
+    });
+  }
+  const groups = (() => {
+    const byCat = new Map<string, RequestLine[]>();
+    for (const l of form.lines) {
+      const cat = master(l)?.category ?? "Choose an item";
+      byCat.set(cat, [...(byCat.get(cat) ?? []), l]);
+    }
+    return [...byCat.entries()].sort(([x], [y]) => x.localeCompare(y));
+  })();
+
+  // Enter never submits the form; only the buttons do.
   function onKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
     const el = e.target as HTMLElement;
-    if (e.key !== "Enter" || el.tagName === "BUTTON" || el.tagName === "TEXTAREA") return;
-    e.preventDefault();
-    if (editable && !templateId && el.closest("tbody")) addLine();
+    if (e.key === "Enter" && el.tagName !== "BUTTON" && el.tagName !== "TEXTAREA") e.preventDefault();
   }
 
   // A template is just a saved item list. Loading one lists every item with an
@@ -415,14 +462,10 @@ export function NewPurchaseRequestPage() {
       <Link to="/purchasing" className="mb-3 inline-block text-[13px] font-semibold" style={{ color: "var(--brass-600)" }}>← Back to Purchasing</Link>
       <PageHeader
         title={isNew ? "New purchase request" : `${doc?.code} — edit`}
-        subtitle="Choose each item from the Item Master, add a quantity and any details. Prices are indicative (last purchase price); the supplier price is set on the purchase order. Press Enter in a line to add the next item. Or start from a saved template: enter quantities only, and just the items with a quantity are requested."
+        subtitle="Start from a saved template or search for items, then type quantities. Only items with a quantity are requested. Prices are indicative (last purchase price); the supplier price is set on the purchase order."
       />
       {!editable && <p className="mb-3 text-[13px]" style={{ color: "var(--status-critical)" }}>This request is {doc?.status} and can no longer be edited.</p>}
       <form onSubmit={(e) => e.preventDefault()} onKeyDown={onKeyDown} className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3" style={{ borderColor: "var(--border-strong)", background: "var(--surface)" }}>
-          <span className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--ink-400)" }}>Estimated PR value</span>
-          <span className="text-xl font-bold">KWD {total.toFixed(2)}</span>
-        </div>
         <fieldset disabled={!editable} className="flex min-w-0 flex-col gap-4">
           <div className="grid max-w-3xl grid-cols-2 gap-3 rounded-xl border p-3 sm:grid-cols-4" style={border}>
             <label className="flex flex-col gap-1 text-[13px] font-medium">Required delivery date *
@@ -466,56 +509,105 @@ export function NewPurchaseRequestPage() {
             )}
           </div>
 
-          <div className="overflow-x-auto">
-            <Table>
-              <thead>
-                <tr><Th>Item (Item Master)</Th><Th>Description</Th><Th>Qty</Th><Th>Unit</Th><Th>Indicative price (KWD)</Th><Th>Line cost (KWD)</Th><Th>{" "}</Th></tr>
-              </thead>
-              <tbody>
-                {form.lines.map((line) => (
-                  <tr key={line.key}>
-                    <Td>
-                      <select required className="w-48 rounded-lg border px-2 py-1.5 text-sm" style={border}
-                        value={line.itemRef} onChange={(e) => updateLine(line.key, { itemRef: e.target.value, legacyName: undefined })}>
-                        <option value="">{line.legacyName ? `Choose an item (was: ${line.legacyName})` : "— Select an item —"}</option>
-                        {itemMaster?.filter((im) => im.active).map((im) => <option key={im.id} value={im.id}>{im.name}</option>)}
-                      </select>
-                    </Td>
-                    <Td>
-                      <input maxLength={300} placeholder="Brand, size, specification…" className="w-56 rounded-lg border px-2 py-1.5 text-sm" style={border}
-                        value={line.description} onChange={(e) => updateLine(line.key, { description: e.target.value })} />
-                    </Td>
-                    <Td>
-                      <input type="number" min={0} step="any" className="w-20 rounded-lg border px-2 py-1.5 text-sm" style={border}
-                        placeholder="Qty" value={line.qty || ""} onChange={(e) => updateLine(line.key, { qty: Number(e.target.value) })} />
-                    </Td>
-                    <Td>{master(line)?.uom ?? "—"}</Td>
-                    <Td style={{ color: "var(--ink-500)" }}>{master(line) ? priceOf(line).toFixed(3) : "—"}</Td>
-                    <Td className="font-semibold">{(line.qty * priceOf(line)).toFixed(2)}</Td>
-                    <Td>
-                      {form.lines.length > 1 && (
-                        <button type="button" className="text-xs font-semibold" style={{ color: "var(--status-critical)" }} onClick={() => removeLine(line.key)}>
-                          Remove
-                        </button>
-                      )}
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[240px] max-w-md flex-1">
+              <input
+                value={itemSearch} onChange={(e) => setItemSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && matches[0]) { addItem(matches[0]); setItemSearch(""); } }}
+                placeholder="Search to add an item…" className="w-full rounded-lg border px-3 py-2 text-sm" style={border}
+              />
+              {matches.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border shadow-lg" style={{ background: "var(--surface)", borderColor: "var(--border-strong)" }}>
+                  {matches.map((im) => (
+                    <button key={im.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[13px]"
+                      onClick={() => { addItem(im); setItemSearch(""); }}>
+                      <span className="font-medium">{im.name}</span>
+                      <span style={{ color: "var(--ink-400)" }}>{im.uom}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {belowMin.length > 0 && (
+              <Button type="button" variant="secondary" onClick={addBelowMin}>Add {belowMin.length} below minimum</Button>
+            )}
           </div>
-          <div>
-            <Button type="button" variant="secondary" onClick={addLine}>+ Add another item</Button>
-          </div>
+
+          {form.lines.length === 0 ? (
+            <EmptyState label="Choose a template above, or search for the items you need." />
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <thead>
+                  <tr><Th>Item</Th><Th>Description</Th><Th>In stock</Th><Th>Min</Th><Th>Last price</Th><Th>Qty</Th><Th>Line cost</Th><Th>{" "}</Th></tr>
+                </thead>
+                <tbody>
+                  {groups.map(([category, lines]) => (
+                    <Fragment key={category}>
+                      <tr>
+                        <td colSpan={8} className="px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider" style={{ background: "var(--surface-sunken)", color: "var(--ink-500)" }}>
+                          {category} · {lines.length}
+                        </td>
+                      </tr>
+                      {lines.map((line) => {
+                        const im = master(line);
+                        const st = stockOf(im);
+                        const low = !!st && st.min > 0 && st.stock < st.min;
+                        return (
+                          <tr key={line.key} style={{ background: line.qty > 0 ? "var(--brass-100)" : undefined }}>
+                            <Td>
+                              {im ? (
+                                <span className="font-semibold">{im.name} <span className="font-normal" style={{ color: "var(--ink-400)" }}>{im.uom}</span></span>
+                              ) : (
+                                <select required className="w-48 rounded-lg border px-2 py-1.5 text-sm" style={border}
+                                  value={line.itemRef} onChange={(e) => updateLine(line.key, { itemRef: e.target.value, legacyName: undefined })}>
+                                  <option value="">{line.legacyName ? `Choose an item (was: ${line.legacyName})` : "— Select an item —"}</option>
+                                  {itemMaster?.filter((x) => x.active).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                                </select>
+                              )}
+                            </Td>
+                            <Td>
+                              <input maxLength={300} placeholder="Brand, size, specification…" className="w-52 rounded-lg border px-2 py-1.5 text-sm" style={border}
+                                value={line.description} onChange={(e) => updateLine(line.key, { description: e.target.value })} />
+                            </Td>
+                            <Td className="tabular-nums" style={{ color: low ? "var(--status-critical)" : undefined, fontWeight: low ? 700 : undefined }}>{st ? st.stock : "—"}</Td>
+                            <Td className="tabular-nums" style={{ color: "var(--ink-500)" }}>{st ? st.min : "—"}</Td>
+                            <Td className="tabular-nums" style={{ color: "var(--ink-500)" }}>{im ? priceOf(line).toFixed(3) : "—"}</Td>
+                            <Td>
+                              <input type="number" min={0} step="any" inputMode="decimal" placeholder="Qty"
+                                className="w-24 rounded-lg border px-2 py-1.5 text-right text-sm"
+                                style={{ borderColor: line.qty > 0 ? "var(--brass-500)" : "var(--border-strong)" }}
+                                value={line.qty || ""} onChange={(e) => updateLine(line.key, { qty: Number(e.target.value) })} />
+                            </Td>
+                            <Td className="font-semibold tabular-nums">{line.qty > 0 ? (line.qty * priceOf(line)).toFixed(2) : "—"}</Td>
+                            <Td>
+                              <button type="button" className="text-xs font-semibold" style={{ color: "var(--status-critical)" }} onClick={() => removeLine(line.key)}>Remove</button>
+                            </Td>
+                          </tr>
+                        );
+                      })}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+          )}
         </fieldset>
 
         {error && <p className="text-[13px]" style={{ color: "var(--status-critical)" }}>{error}</p>}
         {editable && (
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" disabled={busy} onClick={() => save(false)}>Save draft</Button>
-            <Button type="button" disabled={busy} onClick={() => save(true)}>
-              {busy ? "Working..." : `Submit request (${requested} item${requested === 1 ? "" : "s"})`}
-            </Button>
+          <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3"
+            style={{ borderColor: "var(--border-strong)", background: "var(--surface)", boxShadow: "var(--shadow-sm)" }}>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px]" style={{ color: "var(--ink-500)" }}>
+              <span><b className="text-[16px]" style={{ color: "var(--ink-900)" }}>{requested}</b> of {form.lines.length} items have a quantity</span>
+              <span>Estimated <b className="text-[16px]" style={{ color: "var(--ink-900)" }}>KWD {total.toFixed(2)}</b></span>
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="secondary" disabled={busy || requested === 0} onClick={() => save(false)}>Save draft</Button>
+              <Button type="button" disabled={busy || requested === 0} onClick={() => save(true)}>
+                {busy ? "Working..." : `Submit request (${requested} item${requested === 1 ? "" : "s"})`}
+              </Button>
+            </div>
           </div>
         )}
       </form>
@@ -593,6 +685,26 @@ export function NewPurchaseOrderPage() {
   // back to the request's own estimate.
   const priceOf = (l: PurchaseRequestLine) => prices[l.id] ?? historyOf(l)[0]?.unit_price ?? l.est_unit_price;
 
+  // Shortcuts that fill every line at once; any line can still be changed by hand.
+  function assignPreferred() {
+    const picked: Record<string, string> = {};
+    for (const l of pr?.lines ?? []) {
+      const pref = l.item_master_id ? itemMaster?.find((x) => x.id === l.item_master_id)?.preferred_supplier_id : null;
+      if (pref) picked[l.id] = pref;
+    }
+    setLineSupplier((s) => ({ ...s, ...picked }));
+  }
+  function assignCheapest() {
+    const picked: Record<string, string> = {};
+    const cheapest: Record<string, number> = {};
+    for (const l of pr?.lines ?? []) {
+      const best = [...historyOf(l)].sort((a, b) => a.unit_price - b.unit_price)[0];
+      if (best) { picked[l.id] = best.supplier_id; cheapest[l.id] = best.unit_price; }
+    }
+    setLineSupplier((s) => ({ ...s, ...picked }));
+    setPrices((s) => ({ ...s, ...cheapest }));
+  }
+
   const convert = useMutation({
     mutationFn: async () =>
       api.post(`/purchasing/purchase-requests/${prId}/convert-to-po`, {
@@ -629,11 +741,16 @@ export function NewPurchaseOrderPage() {
         title={`Create purchase order${groups.length > 1 ? "s" : ""} — ${pr.lines.length} item(s)`}
         subtitle={groups.length > 1 ? `Split into ${groups.length} orders by supplier.` : undefined}
       />
-      <form onSubmit={onSubmit} className="flex flex-col gap-4 max-w-3xl">
+      <form onSubmit={onSubmit} className="flex max-w-4xl flex-col gap-4">
         <p className="text-[13px]" style={{ color: "var(--ink-500)" }}>
           {pr.code}: {pr.lines.length} item{pr.lines.length > 1 ? "s" : ""} → {groups.length} purchase order{groups.length > 1 ? "s" : ""}, one per supplier.
           Change a line's supplier and it moves to that supplier's order. Every order stays linked to {pr.code}.
         </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="secondary" onClick={assignPreferred}>Assign preferred suppliers</Button>
+          <Button type="button" variant="secondary" onClick={assignCheapest}>Assign cheapest</Button>
+          <span className="text-[12.5px]" style={{ color: "var(--ink-500)" }}>Cheapest uses the lowest recent price per item and sets that price.</span>
+        </div>
         {groups.map((g) => {
           const groupTotal = g.lines.reduce((s, l) => s + priceOf(l) * l.qty, 0);
           return (
@@ -687,10 +804,25 @@ export function NewPurchaseOrderPage() {
             </div>
           );
         })}
-        <div className="text-[13px] font-semibold">Grand total across {groups.length} order{groups.length > 1 ? "s" : ""}: KWD {grandTotal.toFixed(2)}</div>
-        <Button type="submit" disabled={convert.isPending || unassigned}>
-          {convert.isPending ? "Creating..." : `Create ${groups.length} Purchase Order${groups.length > 1 ? "s" : ""}`}
-        </Button>
+        <div className="sticky bottom-0 flex flex-col gap-3 rounded-xl border p-4" style={{ borderColor: "var(--border-strong)", background: "var(--surface)", boxShadow: "var(--shadow-sm)" }}>
+          <div className="text-[13px] font-extrabold">This will create {groups.length} order{groups.length > 1 ? "s" : ""}</div>
+          <div className="flex flex-col gap-1 text-[13px]">
+            {groups.map((g) => (
+              <div key={g.key} className="flex justify-between gap-3">
+                <span style={{ color: g.supplierId ? "var(--ink-700)" : "var(--status-warning)" }}>
+                  {g.supplierId ? supplierLabel(g.supplierId) : "No supplier yet"} · {g.lines.length} line{g.lines.length > 1 ? "s" : ""}
+                </span>
+                <b className="tabular-nums">KWD {g.lines.reduce((sum, l) => sum + priceOf(l) * l.qty, 0).toFixed(3)}</b>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3" style={{ borderColor: "var(--border)" }}>
+            <b className="text-[14px]">Total KWD {grandTotal.toFixed(3)}</b>
+            <Button type="submit" disabled={convert.isPending || unassigned}>
+              {convert.isPending ? "Creating..." : `Create ${groups.length} order${groups.length > 1 ? "s" : ""}`}
+            </Button>
+          </div>
+        </div>
       </form>
     </div>
   );
@@ -702,7 +834,7 @@ function OrdersTab() {
   const { data: grns } = useList<Grn>("grns", "/purchasing/grns");
   const qc = useQueryClient();
   // Keep only the id so the open detail follows refetches (status changes).
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(useLinkedDoc());
   const detail = data?.find((po) => po.id === detailId) ?? null;
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -908,6 +1040,12 @@ export function ReceiveGoodsPage() {
   const receivingLines = pending.filter((l) => (qtys[l.id] ?? 0) > 0);
   const hasVariance = receivingLines.some((l) => Math.abs((prices[l.id] ?? l.price) - l.price) > 0.0005);
   const varianceValue = receivingLines.reduce((sum, l) => sum + (qtys[l.id] ?? 0) * ((prices[l.id] ?? l.price) - l.price), 0);
+  const receivingValue = receivingLines.reduce((sum, l) => sum + (qtys[l.id] ?? 0) * (prices[l.id] ?? l.price), 0);
+  // One press when the delivery matches the order exactly.
+  const receiveAllInFull = () => {
+    setQtys(Object.fromEntries(pending.map((l) => [l.id, l.qty - l.received_qty])));
+    setPrices(Object.fromEntries(pending.map((l) => [l.id, l.price])));
+  };
 
   const receive = useMutation({
     mutationFn: async (submit: boolean) =>
@@ -952,9 +1090,10 @@ export function ReceiveGoodsPage() {
         <div className="flex items-center gap-2">
           <Badge>{supplierName}</Badge>
           <span style={{ color: "var(--ink-500)" }}>
-            Enter the quantity actually received for each line — partial receipts are supported. Adjust the price
-            only if the actual invoice differs from what was ordered.
+            Quantities and prices start as ordered. If everything arrived as ordered, just post it; otherwise change only the
+            lines that differ.
           </span>
+          <Button type="button" size="sm" variant="secondary" onClick={receiveAllInFull}>Everything arrived in full</Button>
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 font-medium">
@@ -984,12 +1123,15 @@ export function ReceiveGoodsPage() {
           </label>
         </div>
         <Table>
-          <thead><tr><Th>Item</Th><Th>Ordered</Th><Th>Already received</Th><Th>Pending</Th><Th>Receiving now</Th><Th>Actual price</Th><Th>Expiry</Th><Th>Batch</Th></tr></thead>
+          <thead><tr><Th>Item</Th><Th>Ordered</Th><Th>Already received</Th><Th>Pending</Th><Th>Receiving now</Th><Th>Actual price</Th><Th>Expiry</Th><Th>Batch</Th><Th>Check</Th></tr></thead>
           <tbody>
             {pending.map((l) => {
               const pendingQty = l.qty - l.received_qty;
               const adjusted = (prices[l.id] ?? l.price) !== l.price;
               const food = isFoodLine(l);
+              const got = qtys[l.id] ?? 0;
+              const short = pendingQty - got;
+              const priceDiff = (prices[l.id] ?? l.price) - l.price;
               return (
                 <tr key={l.id}>
                   <Td className="font-medium">{l.name}</Td>
@@ -1000,7 +1142,7 @@ export function ReceiveGoodsPage() {
                     <input
                       type="number" min={0} max={pendingQty} step="any"
                       className="w-20 rounded-lg border px-2 py-1 text-right text-sm"
-                      style={{ borderColor: "var(--border-strong)" }}
+                      style={{ borderColor: short > 0.0005 ? "var(--status-warning)" : "var(--border-strong)" }}
                       value={qtys[l.id] ?? 0}
                       onChange={(e) => setQtys((s) => ({ ...s, [l.id]: Number(e.target.value) }))}
                     />
@@ -1039,6 +1181,17 @@ export function ReceiveGoodsPage() {
                       />
                     ) : "—"}
                   </Td>
+                  <Td>
+                    <div className="flex flex-wrap gap-1">
+                      {got <= 0 ? <Badge>Not received</Badge> : (
+                        <>
+                          {short > 0.0005 && <Badge tone="warning">Short {+short.toFixed(3)} {l.unit}</Badge>}
+                          {Math.abs(priceDiff) > 0.0005 && <Badge tone="critical">{priceDiff > 0 ? "+" : ""}{priceDiff.toFixed(3)} / {l.unit}</Badge>}
+                          {short <= 0.0005 && Math.abs(priceDiff) <= 0.0005 && <Badge tone="good">Match</Badge>}
+                        </>
+                      )}
+                    </div>
+                  </Td>
                 </tr>
               );
             })}
@@ -1062,13 +1215,21 @@ export function ReceiveGoodsPage() {
           </div>
         )}
         {receive.isError && <p style={{ color: "var(--status-critical)" }}>{errorText(receive.error)}</p>}
-        <div className="flex gap-2">
-          <Button onClick={() => receive.mutate(true)} disabled={receive.isPending || !costCenterId || (hasVariance && !varianceNote.trim())}>
-            {receive.isPending ? "Posting..." : "Receive & Submit"}
-          </Button>
-          <Button variant="secondary" onClick={() => receive.mutate(false)} disabled={receive.isPending || !costCenterId}>
-            Save draft
-          </Button>
+        <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3"
+          style={{ borderColor: "var(--border-strong)", background: "var(--surface)", boxShadow: "var(--shadow-sm)" }}>
+          <span className="text-[12.5px]" style={{ color: "var(--ink-500)" }}>
+            {receivingLines.length === 0
+              ? "Enter a quantity on at least one line."
+              : `Posting adds ${receivingLines.length} item${receivingLines.length === 1 ? "" : "s"} to ${costCenters?.find((c) => c.id === costCenterId)?.label ?? "the receiving cost center"} and updates their average cost.`}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => receive.mutate(false)} disabled={receive.isPending || !costCenterId}>
+              Save draft
+            </Button>
+            <Button onClick={() => receive.mutate(true)} disabled={receive.isPending || !costCenterId || receivingLines.length === 0 || (hasVariance && !varianceNote.trim())}>
+              {receive.isPending ? "Posting..." : `Receive & Submit · KWD ${receivingValue.toFixed(3)}`}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
@@ -1080,7 +1241,7 @@ function GoodsReceivedTab() {
   const { data: suppliers } = useList<Supplier>("suppliers", "/suppliers");
   const { data: orders } = useList<PurchaseOrder>("purchase-orders", "/purchasing/purchase-orders");
   // Keep only the id so the open detail follows the refetched GRN (status changes).
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(useLinkedDoc());
   const detail = grns?.find((g) => g.id === detailId) ?? null;
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -1489,6 +1650,7 @@ function SuppliersTab() {
   const { data: orders } = useList<PurchaseOrder>("purchase-orders", "/purchasing/purchase-orders");
   const qc = useQueryClient();
   const [modal, setModal] = useState<"add" | Supplier | null>(null);
+  const [profile, setProfile] = useState<Supplier | null>(null);
   const remove = useMutation({
     mutationFn: async (id: string) => api.delete(`/suppliers/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["suppliers"] }),
@@ -1533,6 +1695,7 @@ function SuppliersTab() {
                   <div className="flex justify-between"><span style={{ color: "var(--ink-500)" }}>Orders placed</span><span className="font-semibold">{spend?.orders ?? 0}</span></div>
                 </div>
                 <div className="mt-3 flex gap-2">
+                  <Button size="sm" onClick={() => setProfile(s)}>View</Button>
                   <Button size="sm" variant="secondary" onClick={() => setModal(s)}>Edit</Button>
                   <Button
                     size="sm" variant="danger"
@@ -1548,6 +1711,7 @@ function SuppliersTab() {
         </div>
       )}
       {modal && <SupplierModal supplier={modal === "add" ? undefined : modal} onClose={() => setModal(null)} />}
+      {profile && <SupplierProfile supplier={profile} onClose={() => setProfile(null)} />}
     </div>
   );
 }
