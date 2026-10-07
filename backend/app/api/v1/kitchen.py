@@ -652,7 +652,7 @@ async def _residence_pdf_context(db: AsyncSession) -> dict:
             "phone": residence.phone if residence else None,
         },
         "currency": residence.currency if residence else "KWD",
-        "logo_data_uri": logo_data_uri(residence.logo_path) if residence else None,
+        "logo_data_uri": logo_data_uri(residence),
     }
 
 

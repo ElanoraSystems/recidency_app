@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, Numeric, String
+from sqlalchemy import Date, ForeignKey, LargeBinary, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPKMixin
@@ -20,6 +20,9 @@ class ResidenceSettings(Base, UUIDPKMixin):
     # Letterhead fields for generated PDFs (POs, invoices) — see
     # app/services/pdf.py and the /settings/residence/logo endpoints.
     logo_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # The logo image itself (small), kept in the database so it survives deploys.
+    logo_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    logo_content_type: Mapped[str | None] = mapped_column(String(60), nullable=True)
     address: Mapped[str | None] = mapped_column(String(300), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     terms_and_conditions: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -62,7 +65,9 @@ class DocumentFile(Base, UUIDPKMixin):
     __tablename__ = "document_files"
 
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
-    s3_key: Mapped[str] = mapped_column(String(500))
+    s3_key: Mapped[str] = mapped_column(String(500))  # legacy disk path; new files keep their bytes in `data`
+    # The file itself. Deferred so listing records never loads file bytes.
+    data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
     filename: Mapped[str] = mapped_column(String(300))
     content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
     size_bytes: Mapped[int | None] = mapped_column(nullable=True)

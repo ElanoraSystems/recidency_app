@@ -5,12 +5,13 @@ WeasyPrint. Kept as one small shared helper so every PDF-generating endpoint
 import base64
 from pathlib import Path
 
+from app.services.files import UPLOAD_ROOT
+
 from jinja2 import Environment, FileSystemLoader
 
 from weasyprint import HTML
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates" / "pdf"
-UPLOAD_ROOT = Path(__file__).resolve().parent.parent.parent / "uploads"
 
 _env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
 
@@ -20,12 +21,18 @@ def render_pdf(template_name: str, context: dict) -> bytes:
     return HTML(string=html, base_url=str(TEMPLATES_DIR)).write_pdf()
 
 
-def logo_data_uri(logo_path: str | None) -> str | None:
-    """Reads the uploaded logo off disk and inlines it as a base64 data URI
-    — avoids configuring WeasyPrint's external-URL fetcher entirely."""
-    if not logo_path:
+def logo_data_uri(residence) -> str | None:
+    """Inlines the uploaded logo as a base64 data URI — avoids configuring
+    WeasyPrint's external-URL fetcher entirely. Reads the database copy, or a
+    pre-migration file on disk."""
+    if residence is None:
         return None
-    full_path = UPLOAD_ROOT / logo_path
+    if residence.logo_data:
+        mime = (residence.logo_content_type or "image/png").split(";")[0]
+        return f"data:{mime};base64,{base64.b64encode(bytes(residence.logo_data)).decode('ascii')}"
+    if not residence.logo_path:
+        return None
+    full_path = UPLOAD_ROOT / residence.logo_path
     if not full_path.exists():
         return None
     ext = full_path.suffix.lstrip(".").lower() or "png"

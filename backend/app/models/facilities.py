@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Date, ForeignKey, Integer, LargeBinary, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -150,7 +150,9 @@ class Attachment(Base, UUIDPKMixin):
 
     entity_type: Mapped[str] = mapped_column(String(40))  # asset | maintenance_request
     entity_id: Mapped[uuid.UUID] = mapped_column()
-    s3_key: Mapped[str] = mapped_column(String(500))
+    s3_key: Mapped[str] = mapped_column(String(500))  # legacy disk path; new files keep their bytes in `data`
+    # The file itself. Deferred so listing records never loads file bytes.
+    data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
     filename: Mapped[str] = mapped_column(String(300))
     content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
     size_bytes: Mapped[int | None] = mapped_column(nullable=True)

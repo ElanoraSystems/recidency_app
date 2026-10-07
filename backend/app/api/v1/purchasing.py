@@ -508,7 +508,7 @@ async def po_pdf(
                 "terms_and_conditions": residence.terms_and_conditions if residence else None,
             },
             "currency": residence.currency if residence else "KWD",
-            "logo_data_uri": logo_data_uri(residence.logo_path) if residence else None,
+            "logo_data_uri": logo_data_uri(residence),
             "created_by_name": created_by.name if created_by else None,
             "approved_by_name": approved_by.name if approved_by else None,
         },

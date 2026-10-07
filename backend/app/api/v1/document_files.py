@@ -1,22 +1,19 @@
 import uuid
-from datetime import date
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 from app.core.clock import local_today
 from app.api.deps import require_module
 from app.db.session import get_db
 from app.models.finance import Document, DocumentFile
 from app.models.user import User
+from app.services.files import file_response, read_upload
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 documents_access = require_module("documents")
-
-UPLOAD_ROOT = Path(__file__).resolve().parents[3] / "uploads"
 
 
 @router.post("/{document_id}/files", status_code=201)
@@ -26,22 +23,17 @@ async def upload_document_file(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(documents_access),
 ):
-    """Local-disk fallback for the build plan's S3-presigned-URL flow (§05) —
-    same key convention, swap this for boto3 presigned PUT/GET when an
-    S3_BUCKET is configured."""
+    """The file is stored in the database (the host has no persistent disk);
+    swap for boto3 presigned PUT/GET if an S3 bucket is ever configured."""
     document = await db.get(Document, document_id)
     if not document:
         raise HTTPException(404, "Document not found")
 
-    key = f"residence/documents/{document_id}/{uuid.uuid4()}-{file.filename}"
-    dest = UPLOAD_ROOT / key
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    contents = await file.read()
-    dest.write_bytes(contents)
-
+    contents = await read_upload(file)
     record = DocumentFile(
         document_id=document_id,
-        s3_key=key,
+        s3_key=f"db/documents/{document_id}/{uuid.uuid4()}",
+        data=contents,
         filename=file.filename or "file",
         content_type=file.content_type,
         size_bytes=len(contents),
@@ -72,10 +64,7 @@ async def list_document_files(
 async def download_document_file(
     file_id: uuid.UUID, db: AsyncSession = Depends(get_db), _user: User = Depends(documents_access)
 ):
-    record = await db.get(DocumentFile, file_id)
+    record = (await db.execute(select(DocumentFile).options(undefer(DocumentFile.data)).where(DocumentFile.id == file_id))).scalar_one_or_none()
     if not record:
         raise HTTPException(404, "File not found")
-    path = UPLOAD_ROOT / record.s3_key
-    if not path.exists():
-        raise HTTPException(404, "File missing on disk")
-    return FileResponse(path, filename=record.filename, media_type=record.content_type)
+    return file_response(record.data, record.s3_key, record.filename, record.content_type)

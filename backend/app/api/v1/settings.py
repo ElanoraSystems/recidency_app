@@ -1,8 +1,6 @@
 import uuid
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,10 +11,9 @@ from app.crud.activity import log_activity
 from app.db.session import get_db
 from app.models.finance import ResidenceSettings
 from app.models.user import FamilyAccount, FamilyModuleAccess, User
+from app.services.files import file_response, read_upload
 
 router = APIRouter(prefix="/settings", tags=["settings"])
-
-UPLOAD_ROOT = Path(__file__).resolve().parents[3] / "uploads"
 
 
 def require_owner(user: User = Depends(get_current_user)) -> User:
@@ -81,10 +78,12 @@ async def upload_residence_logo(
     residence = result.scalar_one_or_none()
     if not residence:
         raise HTTPException(404, "Residence settings not configured")
-    key = f"residence/logo/{uuid.uuid4()}-{file.filename}"
-    dest = UPLOAD_ROOT / key
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(await file.read())
+    kind = (file.content_type or "").lower()
+    if not kind.startswith("image/"):
+        raise HTTPException(400, "The logo must be an image")
+    key = f"db/logo/{uuid.uuid4()}-{file.filename}"
+    residence.logo_data = await read_upload(file)
+    residence.logo_content_type = kind
     residence.logo_path = key
     await log_activity(db, user, "Updated residence logo", file.filename or "")
     await db.commit()
@@ -97,10 +96,7 @@ async def download_residence_logo(db: AsyncSession = Depends(get_db), _user: Use
     residence = result.scalar_one_or_none()
     if not residence or not residence.logo_path:
         raise HTTPException(404, "No logo uploaded")
-    path = UPLOAD_ROOT / residence.logo_path
-    if not path.exists():
-        raise HTTPException(404, "Logo file missing on disk")
-    return FileResponse(path)
+    return file_response(residence.logo_data, residence.logo_path, "logo", residence.logo_content_type, attachment=False)
 
 
 class FamilyAccountIn(BaseModel):

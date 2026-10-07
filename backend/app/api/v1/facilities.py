@@ -1,9 +1,7 @@
 import uuid
 from datetime import date
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +15,6 @@ from app.models.user import User
 router = APIRouter(prefix="/assets", tags=["maintenance"])
 maintenance_access = require_module("maintenance")
 
-UPLOAD_ROOT = Path(__file__).resolve().parents[3] / "uploads"
 
 
 class AssetIn(BaseModel):

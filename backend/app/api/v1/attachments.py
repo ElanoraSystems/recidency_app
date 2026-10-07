@@ -1,21 +1,19 @@
 import uuid
-from datetime import date
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import undefer
 
 from app.core.clock import local_today
 from app.api.deps import _user_allowed_modules, get_current_user
 from app.db.session import get_db
 from app.models.facilities import Attachment
 from app.models.user import User
+from app.services.files import file_response, read_upload
 
 router = APIRouter(prefix="/attachments", tags=["attachments"])
 
-UPLOAD_ROOT = Path(__file__).resolve().parents[3] / "uploads"
 ENTITY_MODULES = {"asset": "maintenance", "maintenance_request": "maintenance", "task": "tasks", "expense": "expenses"}
 
 
@@ -39,16 +37,12 @@ async def upload_attachment(
     user: User = Depends(get_current_user),
 ):
     await _check_access(entity_type, user, db)
-    key = f"residence/{entity_type}/{entity_id}/{uuid.uuid4()}-{file.filename}"
-    dest = UPLOAD_ROOT / key
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    contents = await file.read()
-    dest.write_bytes(contents)
-
+    contents = await read_upload(file)
     record = Attachment(
         entity_type=entity_type,
         entity_id=entity_id,
-        s3_key=key,
+        s3_key=f"db/{entity_type}/{entity_id}/{uuid.uuid4()}",
+        data=contents,
         filename=file.filename or "file",
         content_type=file.content_type,
         size_bytes=len(contents),
@@ -83,11 +77,8 @@ async def list_attachments(
 async def download_attachment(
     file_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
 ):
-    record = await db.get(Attachment, file_id)
+    record = (await db.execute(select(Attachment).options(undefer(Attachment.data)).where(Attachment.id == file_id))).scalar_one_or_none()
     if not record:
         raise HTTPException(404, "File not found")
     await _check_access(record.entity_type, user, db)
-    path = UPLOAD_ROOT / record.s3_key
-    if not path.exists():
-        raise HTTPException(404, "File missing on disk")
-    return FileResponse(path, filename=record.filename, media_type=record.content_type)
+    return file_response(record.data, record.s3_key, record.filename, record.content_type)
